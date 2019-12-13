@@ -2,12 +2,9 @@ package nl.medicaldataworks.railway.station.service;
 
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.CentralConfiguration;
-import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.servlet.function.ServerResponse;
 import reactor.core.publisher.Mono;
 
 @Service
@@ -24,31 +21,22 @@ public class TrainRunnerService {
 
     @Scheduled(fixedDelay = 1000)
     public void getNextTaskFromServer(){
-        webClient.get()
-                .uri("http://localhost:8080/api/tasks")
+        Mono<String> body = this.webClient
+                .get()
+                .uri("/api/tasks")
                 .retrieve()
-                .bodyToFlux(String.class)
-                .subscribe(s -> log.info("response: {}", s));
+                .bodyToMono(String.class);
+        body.subscribe(s -> wtf(s));
+    }
 
+    private void wtf2(Throwable s) {
+        log.error("error: {}", s);
+    }
 
-//        URIBuilder builder = new URIBuilder();
-////        builder.setScheme(HTTP);
-////        builder.setHost(centralConfig.getHostname());
-////        builder.setPort(centralConfig.getPort());
-////        builder.setPath(API_PATH);
-////        builder.setParameter("dest", "/archive/projects/" + rchiveConfig.getProjectId());
-////        HttpHeaders headers = new HttpHeaders();
-////        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-////        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-////        FileSystemResource fileSystemResource = new FileSystemResource(zipFilePath);
-////        body.add("File", fileSystemResource);
-////        HttpEntity<MultiValueMap<String, Object>> requestEntity
-////                = new HttpEntity<>(body, headers);
-////        ResponseEntity<String> response = restTemplate.exchange(builder.build(),
-////                HttpMethod.POST,
-////                requestEntity,
-////                String.class);
-////        log.info("response: {}", response);
+    private void wtf(String s) {
+        log.info("response: {}", s);
+        System.out.println("whattt" + s);
+        log.info("response: {}", s);
     }
 
     public void runTrain(){

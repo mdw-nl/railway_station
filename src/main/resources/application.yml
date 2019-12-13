@@ -1,17 +1,20 @@
 central:
   hostname: "localhost"
   port: 8080
+
 server:
   port: 10080
+
 spring:
   security:
     oauth2:
       client:
         provider:
           keycloak:
-            issuer-uri: http://localhost:9080/oauth/token
+            token-uri: http://localhost:9080/auth/realms/railway/protocol/openid-connect/token
         registration:
           keycloak:
-            client-id: "tims-client"
-            client-secret: "7796af40-93ff-442c-b4ad-e929dcad02a7"
+            client-id: testclient
+            client-secret: "8fe44274-b6bb-4be2-baa7-343ebcd3021c"
             authorization-grant-type: client_credentials
+
