@@ -15,6 +15,6 @@ spring:
         registration:
           keycloak:
             client-id: testclient
-            client-secret: "8fe44274-b6bb-4be2-baa7-343ebcd3021c"
+            client-secret: "fe95901a-a153-47db-a70c-0aaba4de1cf3"
             authorization-grant-type: client_credentials
 
