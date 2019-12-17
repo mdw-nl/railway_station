@@ -1,15 +1,13 @@
 package nl.medicaldataworks.railway.station.web.dto;
 
+import lombok.Data;
 import nl.medicaldataworks.railway.station.domain.CalculationStatus;
 
-import java.util.Date;
-
+@Data
 public class TaskDto {
     private Long id;
-    private Date creationTimestamp;
-    private TrainDto trainDto;
     private CalculationStatus calculationStatus;
     private String result;
-    private String clientId;
-    private String ownerName;
+    private Long station;
+    private Long train;
 }

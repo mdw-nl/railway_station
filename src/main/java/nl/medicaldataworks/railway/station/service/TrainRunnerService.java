@@ -11,46 +11,74 @@ import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.CentralConfiguration;
+import nl.medicaldataworks.railway.station.web.dto.TaskDto;
+import nl.medicaldataworks.railway.station.web.dto.TrainDto;
 import org.apache.commons.lang.SystemUtils;
+import org.apache.http.client.utils.URIBuilder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.io.ByteArrayOutputStream;
+import java.net.URISyntaxException;
+
+import static org.apache.http.HttpVersion.HTTP;
 
 @Service
 @Slf4j
 public class TrainRunnerService {
+    public static final String TASK_API_PATH =  "/api/tasks";
     private WebClient webClient;
     private CentralConfiguration centralConfig;
-    private static final String API_PATH = "/api/";
 
     public TrainRunnerService(WebClient webClient, CentralConfiguration centralConfig) {
         this.webClient = webClient;
         this.centralConfig = centralConfig;
-//        getNextTaskFromServer();
-        runTrain();
     }
 
-//    @Scheduled(fixedDelay = 10000)
-    public void getNextTaskFromServer(){
-        //TODO add clientID to get this client specific code.
-        Mono<String> body = webClient
+    @Scheduled(fixedDelay = 10000)
+    public void getNextTaskFromServer() throws URISyntaxException {
+        URIBuilder builder = new URIBuilder();
+        builder.setScheme(HTTP);
+        builder.setHost(centralConfig.getHostname());
+        builder.setPort(centralConfig.getPort());
+        builder.setPath(TASK_API_PATH);
+        builder.setParameter("station-id", "maastro");
+        builder.setParameter("page", "0");
+        builder.setParameter("sort", "creationTimestamp");
+        builder.setParameter("creationTimestamp.dir", "desc");
+        Mono<TaskDto> body = webClient
                 .get()
-                .uri("/api/tasks")
+                .uri(builder.build().toString())
                 .retrieve()
-                .bodyToMono(String.class);
-        body.subscribe(s -> processTask(s));
+                .bodyToMono(TaskDto.class); //TODO: list of taskdto, if null etc
+        body.subscribe(response -> processTask(response));
     }
 
-    private void processTask(String s) {
-        log.info("response: {}", s);
-        System.out.println("whattt" + s);
-        log.info("response: {}", s);
-
-        //if new task
+    private void processTask(TaskDto taskDto) {
+        TrainDto trainDto = getTrain(taskDto.getTrain());
+        log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         runTrain();
+    }
+
+    private TrainDto getTrain(Long id) {
+        URIBuilder builder = new URIBuilder();
+        builder.setScheme(HTTP);
+        builder.setHost(centralConfig.getHostname());
+        builder.setPort(centralConfig.getPort());
+        builder.setPath(String.format("/api/trains/%s", id));
+        try {
+            return webClient
+                    .get()
+                    .uri(builder.build().toString())
+                    .retrieve()
+                    .bodyToMono(TrainDto.class)
+                    .block();
+        } catch (URISyntaxException e) {
+            log.error("Unable to query central API for train.", e);
+        }
+        return null; //TODO: better error handling.
     }
 
     public void runTrain(){
@@ -112,7 +140,16 @@ public class TrainRunnerService {
                 .withAttachStdout(true)
                 .withAttachStderr(true)
                 .withWorkingDir("/")
-                .withCmd("ls ./")
+                .withPrivileged(true)
+                .withCmd("/bin/sh", "runStation.sh")
+                .exec();
+
+        ExecCreateCmdResponse execCreateCmdResponse3 = dockerClient.execCreateCmd(containerId)
+                .withAttachStdout(true)
+                .withAttachStderr(true)
+                .withWorkingDir("/")
+                .withPrivileged(true)
+                .withCmd("cat", "output.txt")
                 .exec();
 
         ExecStartResultCallback callback = new ExecStartResultCallback() {
@@ -127,6 +164,7 @@ public class TrainRunnerService {
 //                new ExecStartResultCallback(stdout, stderr)).awaitCompletion();
 
         dockerClient.execStartCmd(execCreateCmdResponse.getId()).exec(callback).awaitCompletion();
+        dockerClient.execStartCmd(execCreateCmdResponse3.getId()).exec(callback).awaitCompletion();
 
         System.out.println(stdout.toString());
     }
