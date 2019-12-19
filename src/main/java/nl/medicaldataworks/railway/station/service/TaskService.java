@@ -1,12 +1,20 @@
 package nl.medicaldataworks.railway.station.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.CentralConfiguration;
+import nl.medicaldataworks.railway.station.domain.CalculationStatus;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
 import nl.medicaldataworks.railway.station.web.dto.TrainDto;
 import org.apache.http.client.utils.URIBuilder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+import java.io.IOException;
 import java.net.URISyntaxException;
 
 import static org.apache.http.HttpVersion.HTTP;
@@ -19,7 +27,9 @@ public class TaskService {
     private CentralConfiguration centralConfig;
     private TrainRunnerService trainRunnerService;
 
-    public TaskService(WebClient webClient, CentralConfiguration centralConfig, TrainRunnerService trainRunnerService) {
+    public TaskService(WebClient webClient,
+                       CentralConfiguration centralConfig,
+                       TrainRunnerService trainRunnerService) {
         this.webClient = webClient;
         this.centralConfig = centralConfig;
         this.trainRunnerService =trainRunnerService;
@@ -29,7 +39,7 @@ public class TaskService {
     public void pollForNewTasks(){
         while (true){
             try {
-                log.info("Is there a new task?");
+                log.trace("Polling for tasks");
                 TaskDto[] task = getNextTaskFromServer();
                 if (task.length == 0) {
                     Thread.sleep(1000);
@@ -39,9 +49,11 @@ public class TaskService {
                 }
 
             } catch (URISyntaxException e) {
-                log.error("Unable to query central API for train.", e);
+                log.error("Error while connecting to central: {}", e);
             } catch (InterruptedException e) {
                 log.error("Wait timer interrupted: {}",e);
+            } catch (IOException e) {
+                log.error("Error while accessing files on host: {}",e);
             } catch (Exception e) {
                 log.error("Could not process tasks: {}",e);
             } //TODO added specific error when central is not accessible
@@ -54,10 +66,10 @@ public class TaskService {
         builder.setHost(centralConfig.getHostname());
         builder.setPort(centralConfig.getPort());
         builder.setPath(TASK_API_PATH);
-        builder.setParameter("station-id", "maastro");
-        builder.setParameter("page", "0");
-        builder.setParameter("sort", "creationTimestamp");
-        builder.setParameter("creationTimestamp.dir", "desc");
+        builder.addParameter("station", "1");
+        builder.addParameter("page", "0");
+        builder.addParameter("size", "1");
+        builder.addParameter("sort", "creationTimestamp");
         return webClient
                 .get()
                 .uri(builder.build().toString())
@@ -80,36 +92,40 @@ public class TaskService {
                 .block();
     }
 
-    public void performTask(TaskDto taskDto, TrainDto trainDto) {
+    public void performTask(TaskDto taskDto, TrainDto trainDto) throws InterruptedException, IOException, URISyntaxException {
         log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
+        taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
+        updateTaskDto(taskDto);
         //TODO add master or client switch
-        String id;
+        String id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
+
         try {
-            id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
-        } catch (Exception e) {
-            log.error("Could not start container: {}", e);
-            return;
-        }
-        try {
+            trainRunnerService.addInputToTrain(id, taskDto.toString()); //TODO filter input
             trainRunnerService.executeCommand(id);
-            trainRunnerService.readOutputFile(id);
+            taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
+            taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
+            updateTaskDto(taskDto);
         }
         catch (Exception e) {
             log.error("Could not execute container: {}", e);
         }
         finally {
-            try {
-                trainRunnerService.stopContainer(id);
-            } catch (Exception e) {
-                log.error("Could not stop container: {}", e);
-            } finally {
-                pollForNewTasks();
-            }
+            trainRunnerService.stopContainer(id);
         }
-
     }
 
-    public void sendResultsToServer(){
-        //TODO update task with result
+    public void updateTaskDto(TaskDto taskDto) throws URISyntaxException {
+        URIBuilder builder = new URIBuilder();
+        builder.setScheme(HTTP);
+        builder.setHost(centralConfig.getHostname());
+        builder.setPort(centralConfig.getPort());
+        builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrain()));
+        webClient
+                .put()
+                .uri(builder.build().toString())
+                .body(BodyInserters.fromValue(taskDto))
+                .retrieve()
+                .toBodilessEntity()
+                .block();
     }
 }
