@@ -2,6 +2,7 @@ package nl.medicaldataworks.railway.station.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.client.registration.ReactiveClientRegistrationRepository;
@@ -13,6 +14,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import static org.springframework.security.config.Customizer.withDefaults;
 
 @EnableWebFluxSecurity
+@EnableGlobalMethodSecurity(prePostEnabled = true)
 @Configuration
 public class OauthConfiguration  {
     @Bean
