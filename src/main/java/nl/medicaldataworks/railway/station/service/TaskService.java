@@ -1,7 +1,5 @@
 package nl.medicaldataworks.railway.station.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.CentralConfiguration;
 import nl.medicaldataworks.railway.station.domain.CalculationStatus;
@@ -9,10 +7,8 @@ import nl.medicaldataworks.railway.station.web.dto.TaskDto;
 import nl.medicaldataworks.railway.station.web.dto.TrainDto;
 import org.apache.http.client.utils.URIBuilder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -44,7 +40,7 @@ public class TaskService {
                 if (task.length == 0) {
                     Thread.sleep(1000);
                 } else {
-                    TrainDto trainDto = getTrain(task[0].getTrain());
+                    TrainDto trainDto = getTrain(task[0].getTrainId());
                     performTask(task[0], trainDto);
                 }
 
@@ -66,10 +62,11 @@ public class TaskService {
         builder.setHost(centralConfig.getHostname());
         builder.setPort(centralConfig.getPort());
         builder.setPath(TASK_API_PATH);
-        builder.addParameter("station", "1");
         builder.addParameter("page", "0");
         builder.addParameter("size", "1");
         builder.addParameter("sort", "creationTimestamp");
+        builder.addParameter("station-id", "1"); //TODO: remove hardcoded values
+        builder.addParameter("calculation-status", String.valueOf(CalculationStatus.REQUESTED));
         return webClient
                 .get()
                 .uri(builder.build().toString())
@@ -119,7 +116,7 @@ public class TaskService {
         builder.setScheme(HTTP);
         builder.setHost(centralConfig.getHostname());
         builder.setPort(centralConfig.getPort());
-        builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrain()));
+        builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrainId()));
         webClient
                 .put()
                 .uri(builder.build().toString())

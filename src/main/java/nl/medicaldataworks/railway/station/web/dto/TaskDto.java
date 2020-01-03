@@ -10,7 +10,7 @@ public class TaskDto {
     private Long id;
     private CalculationStatus calculationStatus;
     private String result;
-    private Long station;
-    private Long train;
+    private Long stationId;
+    private Long trainId;
     private File input;
 }
