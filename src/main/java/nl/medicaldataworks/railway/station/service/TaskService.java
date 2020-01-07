@@ -93,12 +93,11 @@ public class TaskService {
         log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTaskDto(taskDto);
-        //TODO add master or client switch
         String id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
 
         try {
-            trainRunnerService.addInputToTrain(id, taskDto.toString()); //TODO filter input
-            trainRunnerService.executeCommand(id);
+            trainRunnerService.addInputToTrain(id, taskDto.getInput()); //TODO filter input
+            trainRunnerService.executeCommand(id, taskDto.isMaster());
             taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
             taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
             updateTaskDto(taskDto);

@@ -2,6 +2,10 @@ central:
   hostname: "localhost"
   port: 8080
 
+docker-registry:
+  username: tim.hendriks
+  password: Sm!26RHJ9A^n
+
 server:
   port: 10080
 
