@@ -3,8 +3,6 @@ package nl.medicaldataworks.railway.station.web.dto;
 import lombok.Data;
 import nl.medicaldataworks.railway.station.domain.CalculationStatus;
 
-import java.io.File;
-
 @Data
 public class TaskDto {
     private Long id;
@@ -12,5 +10,6 @@ public class TaskDto {
     private String result;
     private Long stationId;
     private Long trainId;
-    private File input;
+    private String input;
+    private boolean master;
 }
