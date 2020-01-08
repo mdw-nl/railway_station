@@ -3,8 +3,8 @@ central:
   port: 8080
 
 docker-registry:
-  username: tim.hendriks
-  password: Sm!26RHJ9A^n
+  username: 
+  password: 
 
 server:
   port: 10080
