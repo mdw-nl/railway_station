@@ -1,10 +1,10 @@
 central:
   hostname: "localhost"
   port: 8080
+  simulation: false
 
-docker-registry:
-  username: 
-  password: 
+central-simulation:
+  folder: ""
 
 server:
   port: 10080
