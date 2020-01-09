@@ -6,6 +6,7 @@ import nl.medicaldataworks.railway.station.domain.CalculationStatus;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
 import nl.medicaldataworks.railway.station.web.dto.TrainDto;
 import org.apache.http.client.utils.URIBuilder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -22,6 +23,8 @@ public class TaskService {
     private WebClient webClient;
     private CentralConfiguration centralConfig;
     private TrainRunnerService trainRunnerService;
+    @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
+    private String stationName;
 
     public TaskService(WebClient webClient,
                        CentralConfiguration centralConfig,
@@ -65,7 +68,10 @@ public class TaskService {
         builder.addParameter("page", "0");
         builder.addParameter("size", "1");
         builder.addParameter("sort", "creationTimestamp");
-        builder.addParameter("station-id", "1"); //TODO: remove hardcoded values
+        builder.addParameter("station-name", stationName);
+        
+
+
         builder.addParameter("calculation-status", String.valueOf(CalculationStatus.REQUESTED));
         return webClient
                 .get()
