@@ -9,7 +9,6 @@ import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
-import nl.medicaldataworks.railway.station.config.DockerConfiguration;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.springframework.stereotype.Service;
@@ -26,11 +25,9 @@ public class TrainRunnerService {
     public static final String RUN_MASTER = "runMaster.sh";
     public static final String RUN_STATION = "runStation.sh";
     private DockerClient dockerClient;
-    private DockerConfiguration dockerConfiguration;
     private Path workingDir = new File("./").toPath();
 
-    public TrainRunnerService(DockerConfiguration dockerConfiguration){
-        this.dockerConfiguration = dockerConfiguration;
+    public TrainRunnerService(){
         dockerClient = createDockerClient();
     }
 
@@ -41,8 +38,6 @@ public class TrainRunnerService {
                 .withDockerCertPath("~/.docker/certs")
                 .withDockerConfig("~/.docker")
                 .withApiVersion("1.30")
-                .withRegistryUsername(dockerConfiguration.getUsername())
-                .withRegistryPassword(dockerConfiguration.getPassword())
                 .build();
         return DockerClientBuilder.getInstance(config).build();
     }
