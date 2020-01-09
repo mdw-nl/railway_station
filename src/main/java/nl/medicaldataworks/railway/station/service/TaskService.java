@@ -31,7 +31,7 @@ public class TaskService {
                        TrainRunnerService trainRunnerService) {
         this.webClient = webClient;
         this.centralConfig = centralConfig;
-        this.trainRunnerService =trainRunnerService;
+        this.trainRunnerService = trainRunnerService;
         this.pollForNewTasks();
     }
 
