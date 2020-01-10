@@ -8,7 +8,6 @@ import nl.medicaldataworks.railway.station.web.dto.StationDto;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
 import nl.medicaldataworks.railway.station.web.dto.TrainDto;
 import org.apache.http.client.utils.URIBuilder;
-import org.bouncycastle.jce.provider.AnnotatedException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -16,9 +15,9 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
-import reactor.core.Exceptions.*;
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.util.List;
 
 import static org.apache.http.HttpVersion.HTTP;
 
@@ -46,6 +45,7 @@ public class ProductionTaskService implements TaskService {
         this.trainRunnerService = trainRunnerService;
     }
 
+    @Override
     public void startService() throws InterruptedException {
         if(!isClientConfigurationValid()){
             log.info("Shutting down because the station name could not be validated.");
@@ -80,6 +80,7 @@ public class ProductionTaskService implements TaskService {
         return true;
     }
 
+    @Override
     public void pollForNewTasks() throws InterruptedException {
         while (true){
             try {
@@ -104,6 +105,7 @@ public class ProductionTaskService implements TaskService {
         }
     }
 
+    @Override
     public TaskDto[] getNextTaskFromServer() throws URISyntaxException {
         URIBuilder builder = new URIBuilder();
         builder.setScheme(HTTP);
@@ -138,20 +140,25 @@ public class ProductionTaskService implements TaskService {
                 .block();
     }
 
+    @Override
     public void performTask(TaskDto taskDto, TrainDto trainDto) throws InterruptedException, IOException, URISyntaxException {
         log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
-        updateTaskDto(taskDto);
+        updateTask(taskDto);
         String id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
 
         try {
             trainRunnerService.addInputToTrain(id, taskDto.getInput()); //TODO filter input
             trainRunnerService.executeCommand(id, taskDto.isMaster());
+            List<TaskDto> taskDtos = trainRunnerService.readTaskListFromTrain(id);
             taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
-            taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
-            updateTaskDto(taskDto);
+            createNewTasks(taskDtos, trainDto.getId());
+            determineIdleOrCompletedCalculationStatus(taskDto, taskDtos);
+            updateTask(taskDto);
         }
         catch (Exception e) {
+            taskDto.setCalculationStatus(CalculationStatus.ERRORED); //TODO add stack to result?
+            updateTask(taskDto);
             log.error("Could not execute container.", e);
         }
         finally {
@@ -159,18 +166,45 @@ public class ProductionTaskService implements TaskService {
         }
     }
 
-    public void updateTaskDto(TaskDto taskDto) throws URISyntaxException {
+    private void determineIdleOrCompletedCalculationStatus(TaskDto taskDto, List<TaskDto> taskDtos) {
+        if (!taskDtos.isEmpty() && taskDto.isMaster()) {
+            taskDto.setCalculationStatus(CalculationStatus.IDLE);
+        } else {
+            taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
+        }
+    }
+
+    @Override
+    public void updateTask(TaskDto taskDto) throws URISyntaxException {
         URIBuilder builder = new URIBuilder();
         builder.setScheme(HTTP);
         builder.setHost(centralConfig.getHostname());
         builder.setPort(centralConfig.getPort());
         builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrainId()));
         webClient
-                .put()
+            .put()
+            .uri(builder.build().toString())
+            .body(BodyInserters.fromValue(taskDto))
+            .retrieve()
+            .toBodilessEntity()
+            .block();
+    }
+
+    @Override
+    public void createNewTasks(List<TaskDto> taskDtos, Long trainId) throws URISyntaxException {
+        for (TaskDto taskDto: taskDtos ) {
+            URIBuilder builder = new URIBuilder();
+            builder.setScheme(HTTP);
+            builder.setHost(centralConfig.getHostname());
+            builder.setPort(centralConfig.getPort());
+            builder.setPath(String.format("/api/trains/%s/tasks", trainId));
+            webClient
+                .post()
                 .uri(builder.build().toString())
                 .body(BodyInserters.fromValue(taskDto))
                 .retrieve()
                 .toBodilessEntity()
                 .block();
+        }
     }
 }

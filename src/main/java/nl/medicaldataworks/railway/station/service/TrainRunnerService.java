@@ -1,5 +1,7 @@
 package nl.medicaldataworks.railway.station.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
@@ -9,15 +11,17 @@ import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
+import nl.medicaldataworks.railway.station.web.dto.TaskDto;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @Slf4j
@@ -73,7 +77,24 @@ public class TrainRunnerService {
         return new String(Files.readAllBytes(outputFile));
     }
 
+    public List<TaskDto> readTaskListFromTrain(String containerId) throws IOException, InterruptedException {
+        Path outputFile = workingDir.resolve(containerId).resolve("tasks.json");
+        String cmd = "docker cp " + containerId + ":/tasks.json "  + outputFile.toString();
+        java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+        ObjectMapper objectMapper = new ObjectMapper();
+        String jsonString = new String(Files.readAllBytes(outputFile));
+        List<TaskDto> taskDtos = new ArrayList<>();
+        if (!jsonString.isEmpty()){
+            taskDtos = objectMapper.readValue(jsonString, new TypeReference<List<TaskDto>>(){});
+        }
+        return taskDtos;
+    }
+
     public void addInputToTrain(String containerId, String input) throws IOException, InterruptedException {
+//        if (input == null){
+//            return;
+//        }
+
         Path inputFile = workingDir.resolve(containerId).resolve("input.txt");
         Files.write(inputFile, input.getBytes());
         String cmd = "docker cp " + inputFile.toString() + " " + containerId + ":/input.txt";
