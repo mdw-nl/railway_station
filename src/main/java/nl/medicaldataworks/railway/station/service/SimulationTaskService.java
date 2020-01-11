@@ -34,7 +34,7 @@ public class SimulationTaskService implements TaskService {
     }
 
     @Override
-    public void performTask(TaskDto taskDto, TrainDto trainDto) throws InterruptedException, IOException, URISyntaxException {
+    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTasks) throws InterruptedException, IOException, URISyntaxException {
 
     }
 

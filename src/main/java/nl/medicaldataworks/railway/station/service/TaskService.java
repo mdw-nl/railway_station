@@ -11,7 +11,7 @@ public interface TaskService {
     void startService() throws InterruptedException ;
     void pollForNewTasks() throws InterruptedException;
     TaskDto[] getNextTaskFromServer() throws URISyntaxException;
-    void performTask(TaskDto taskDto, TrainDto trainDto) throws InterruptedException, IOException, URISyntaxException;
+    void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTasks) throws InterruptedException, IOException, URISyntaxException;
     void updateTask(TaskDto taskDto) throws URISyntaxException;
     void createNewTasks(List<TaskDto> taskDtos, Long trainId) throws URISyntaxException ;
 }

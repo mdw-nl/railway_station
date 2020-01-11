@@ -16,8 +16,9 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.springframework.stereotype.Service;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -77,7 +78,7 @@ public class TrainRunnerService {
         return new String(Files.readAllBytes(outputFile));
     }
 
-    public List<TaskDto> readTaskListFromTrain(String containerId) throws IOException, InterruptedException {
+    public List<TaskDto> parseNewTasksFromTrain(String containerId) throws IOException, InterruptedException {
         Path outputFile = workingDir.resolve(containerId).resolve("tasks.json");
         String cmd = "docker cp " + containerId + ":/tasks.json "  + outputFile.toString();
         java.lang.Runtime.getRuntime().exec(cmd).waitFor();
@@ -90,14 +91,10 @@ public class TrainRunnerService {
         return taskDtos;
     }
 
-    public void addInputToTrain(String containerId, String input) throws IOException, InterruptedException {
-//        if (input == null){
-//            return;
-//        }
-
-        Path inputFile = workingDir.resolve(containerId).resolve("input.txt");
+    public void addInputToTrain(String containerId, String input, String fileName) throws IOException, InterruptedException {
+        Path inputFile = workingDir.resolve(containerId).resolve(fileName);
         Files.write(inputFile, input.getBytes());
-        String cmd = "docker cp " + inputFile.toString() + " " + containerId + ":/input.txt";
+        String cmd = "docker cp " + inputFile.toString() + " " + containerId + ":/" + fileName;
         java.lang.Runtime.getRuntime().exec(cmd).waitFor();
     }
 
