@@ -106,7 +106,7 @@ public class ProductionTaskService implements TaskService {
             } catch (IOException e) {
                 log.error("Error while accessing files on host",e);
             } catch (Exception e) { //TODO need to add specific connection to server lost error for logging
-                log.error("Could not process tasks");
+                log.error("Could not process tasks", e);
             }
             Thread.sleep(DEFAULT_SLEEP_TIME);
         }
@@ -123,7 +123,7 @@ public class ProductionTaskService implements TaskService {
         builder.addParameter("sort", "creationTimestamp");
         builder.addParameter("station-name", stationName);
 
-        builder.addParameter("calculation-status", String.valueOf(CalculationStatus.COMPLETED));
+        builder.addParameter("calculation-status", CalculationStatus.COMPLETED.name());
         return webClient
                 .get()
                 .uri(builder.build().toString())
@@ -144,7 +144,7 @@ public class ProductionTaskService implements TaskService {
         builder.addParameter("sort", "creationTimestamp");
         builder.addParameter("station-name", stationName);
 
-        builder.addParameter("calculation-status", String.valueOf(CalculationStatus.REQUESTED));
+        builder.addParameter("calculation-status", CalculationStatus.REQUESTED.name());
         return webClient
                 .get()
                 .uri(builder.build().toString())

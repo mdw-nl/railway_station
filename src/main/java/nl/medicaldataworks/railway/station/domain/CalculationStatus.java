@@ -8,10 +8,11 @@ public enum CalculationStatus {
     REQUESTED(1),
     IDLE(2),
     PROCESSING(3),
-    COMPLETED(4);
+    COMPLETED(4),
+    ARCHIVED(5);
 
     private final Integer id;
-    private static Map map = new HashMap<>();
+    private static Map<Integer, CalculationStatus> map = new HashMap<>();
 
     CalculationStatus(final Integer id) {
         this.id = id;
@@ -28,8 +29,8 @@ public enum CalculationStatus {
         }
     }
 
-    public static CalculationStatus valueOf(int calculationStatus) {
-        return (CalculationStatus) map.get(calculationStatus);
+    public static CalculationStatus valueOf(Integer calculationStatus) {
+        return map.get(calculationStatus);
     }
 
     public int getValue() {
