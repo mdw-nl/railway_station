@@ -29,8 +29,15 @@ import java.util.List;
 public class TrainRunnerService {
     public static final String RUN_MASTER = "runMaster.sh";
     public static final String RUN_STATION = "runStation.sh";
-    private DockerClient dockerClient;
+    public static final String INPUT_FILE = "input.txt";
+    public static final String COMPLETED_TASKS_FILE = "output.txt";
+    public static final String OUTPUT_FILE = "completed-client-tasks.json";
+    public static final String NEW_TASKS_FILE = "new-client-tasks.json";
+    private static final Path DOCKER_DIR = new File("/opt").toPath();
     private Path workingDir = new File("./").toPath();
+
+    private DockerClient dockerClient;
+
 
     public TrainRunnerService(){
         dockerClient = createDockerClient();
@@ -71,31 +78,40 @@ public class TrainRunnerService {
         FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
     }
 
+    public void addInputToTrain(String containerId, String input) throws IOException, InterruptedException {
+        Path inputFile = workingDir.resolve(containerId).resolve(INPUT_FILE);
+        Files.write(inputFile, input.getBytes());
+        String cmd = "docker cp " + inputFile.toString() + " " + containerId + ":" + DOCKER_DIR.resolve(INPUT_FILE).toString();
+        java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+    }
+
+    public void addCompletedTasksToTrain(String containerId, List<TaskDto> taskDtos) throws IOException, InterruptedException{
+        ObjectMapper objectMapper = new ObjectMapper();
+        String jsonString = objectMapper.writeValueAsString(taskDtos);
+        Path completedTasksFile = workingDir.resolve(containerId).resolve(COMPLETED_TASKS_FILE);
+        Files.write(completedTasksFile, jsonString.getBytes());
+        String cmd = "docker cp " + completedTasksFile.toString() + " " + containerId + ":" + DOCKER_DIR.resolve(COMPLETED_TASKS_FILE).toString();
+        java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+    }
+
     public String readOutputFromTrain(String containerId) throws IOException, InterruptedException {
-        Path outputFile = workingDir.resolve(containerId).resolve("output.txt");
-        String cmd = "docker cp " + containerId + ":/output.txt "  + outputFile.toString();
+        Path outputFile = workingDir.resolve(containerId).resolve(OUTPUT_FILE);
+        String cmd = "docker cp " + containerId + ":" + DOCKER_DIR.resolve(OUTPUT_FILE).toString() + " "  + outputFile.toString();
         java.lang.Runtime.getRuntime().exec(cmd).waitFor();
         return new String(Files.readAllBytes(outputFile));
     }
 
     public List<TaskDto> parseNewTasksFromTrain(String containerId) throws IOException, InterruptedException {
-        Path outputFile = workingDir.resolve(containerId).resolve("tasks.json");
-        String cmd = "docker cp " + containerId + ":/tasks.json "  + outputFile.toString();
+        Path newTasksFile = workingDir.resolve(containerId).resolve(NEW_TASKS_FILE);
+        String cmd = "docker cp " + containerId + ":" + DOCKER_DIR.resolve(NEW_TASKS_FILE).toString() + " "  + newTasksFile.toString();
         java.lang.Runtime.getRuntime().exec(cmd).waitFor();
         ObjectMapper objectMapper = new ObjectMapper();
-        String jsonString = new String(Files.readAllBytes(outputFile));
+        String jsonString = new String(Files.readAllBytes(newTasksFile));
         List<TaskDto> taskDtos = new ArrayList<>();
         if (!jsonString.isEmpty()){
             taskDtos = objectMapper.readValue(jsonString, new TypeReference<List<TaskDto>>(){});
         }
         return taskDtos;
-    }
-
-    public void addInputToTrain(String containerId, String input, String fileName) throws IOException, InterruptedException {
-        Path inputFile = workingDir.resolve(containerId).resolve(fileName);
-        Files.write(inputFile, input.getBytes());
-        String cmd = "docker cp " + inputFile.toString() + " " + containerId + ":/" + fileName;
-        java.lang.Runtime.getRuntime().exec(cmd).waitFor();
     }
 
     public void executeCommand(String containerId, boolean master) throws InterruptedException {
