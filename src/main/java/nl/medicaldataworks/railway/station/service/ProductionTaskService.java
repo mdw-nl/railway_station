@@ -31,8 +31,6 @@ import static org.apache.http.HttpVersion.HTTP;
 public class ProductionTaskService implements TaskService {
     public static final String TASK_API_PATH =  "/api/tasks";
     public static final String VALIDATION_API_PATH =  "/api/stations/validate/";
-    public static final String INPUT = "input.txt";
-    private static final String COMPLETED_TASKS = "completed-tasks.json";
     public static final String API_TRAINS = "/api/trains/%s";
     public static final String API_TRAIN_TASKS = API_TRAINS + "/tasks";
 
@@ -168,20 +166,19 @@ public class ProductionTaskService implements TaskService {
     }
 
     @Override
-    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTasks) throws InterruptedException, IOException, URISyntaxException {
+    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws InterruptedException, IOException, URISyntaxException {
         log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
         String id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
         try {
-            trainRunnerService.addInputToTrain(id, taskDto.getInput(), INPUT);
-            String completedTasksString = convertTasksToString(completedTasks);
-            trainRunnerService.addInputToTrain(id, completedTasksString, COMPLETED_TASKS);//TODO filter input
+            trainRunnerService.addInputToTrain(id, taskDto.getInput());//TODO filter input
+            trainRunnerService.addCompletedTasksToTrain(id, completedTaskDtos);
             trainRunnerService.executeCommand(id, taskDto.isMaster());
-            List<TaskDto> taskDtos = trainRunnerService.parseNewTasksFromTrain(id);
+            List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(id);
             taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
-            createNewTasks(taskDtos, trainDto.getId());
-            determineIdleOrCompletedCalculationStatus(taskDto, taskDtos);
+            createNewTasks(newTaskDtos, trainDto.getId());
+            determineIdleOrCompletedCalculationStatus(taskDto, newTaskDtos);
             updateTask(taskDto);
         }
         catch (Exception e) {
@@ -192,10 +189,6 @@ public class ProductionTaskService implements TaskService {
         finally {
             trainRunnerService.stopContainer(id);
         }
-    }
-
-    private String convertTasksToString(List<TaskDto> completedTasks) {
-        return "";
     }
 
     private void determineIdleOrCompletedCalculationStatus(TaskDto taskDto, List<TaskDto> taskDtos) {
