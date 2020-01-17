@@ -116,12 +116,9 @@ public class ProductionTaskService implements TaskService {
         builder.setHost(centralConfig.getHostname());
         builder.setPort(centralConfig.getPort());
         builder.setPath(String.format(API_TRAIN_TASKS, trainDto.getId()));
-        builder.addParameter("page", "0");
-        builder.addParameter("size", "1");
-        builder.addParameter("sort", "creationTimestamp");
         builder.addParameter("station-name", stationName);
-
         builder.addParameter("calculation-status", CalculationStatus.COMPLETED.name());
+        builder.addParameter("iteration", trainDto.getCurrentIteration().toString());
         return webClient
                 .get()
                 .uri(builder.build().toString())
@@ -178,8 +175,11 @@ public class ProductionTaskService implements TaskService {
             List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(id);
             taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
             createNewTasks(newTaskDtos, trainDto.getId());
-            determineIdleOrCompletedCalculationStatus(taskDto, newTaskDtos);
+            taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
             updateTask(taskDto);
+            if(taskDto.isMaster() && newTaskDtos.isEmpty()){
+                updateTrainStatus(trainDto, CalculationStatus.COMPLETED);
+            }
         }
         catch (Exception e) {
             taskDto.setCalculationStatus(CalculationStatus.ERRORED); //TODO add stack to result?
@@ -191,12 +191,20 @@ public class ProductionTaskService implements TaskService {
         }
     }
 
-    private void determineIdleOrCompletedCalculationStatus(TaskDto taskDto, List<TaskDto> taskDtos) {
-        if (!taskDtos.isEmpty() && taskDto.isMaster()) {
-            taskDto.setCalculationStatus(CalculationStatus.IDLE);
-        } else {
-            taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
-        }
+    private void updateTrainStatus(TrainDto trainDto, CalculationStatus calculationStatus) throws URISyntaxException {
+        trainDto.setCalculationStatus(calculationStatus);
+        URIBuilder builder = new URIBuilder();
+        builder.setScheme(HTTP);
+        builder.setHost(centralConfig.getHostname());
+        builder.setPort(centralConfig.getPort());
+        builder.setPath(String.format("/api/trains", trainDto));
+        webClient
+                .put()
+                .uri(builder.build().toString())
+                .body(BodyInserters.fromValue(trainDto))
+                .retrieve()
+                .toBodilessEntity()
+                .block();
     }
 
     @Override

@@ -12,7 +12,6 @@ import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.springframework.stereotype.Service;
 
@@ -30,14 +29,13 @@ public class TrainRunnerService {
     public static final String RUN_MASTER = "runMaster.sh";
     public static final String RUN_STATION = "runStation.sh";
     public static final String INPUT_FILE = "input.txt";
-    public static final String COMPLETED_TASKS_FILE = "output.txt";
-    public static final String OUTPUT_FILE = "completed-client-tasks.json";
+    public static final String COMPLETED_TASKS_FILE = "completed-client-tasks.json";
+    public static final String OUTPUT_FILE = "output.txt";
     public static final String NEW_TASKS_FILE = "new-client-tasks.json";
     private static final Path DOCKER_DIR = new File("/opt").toPath();
     private Path workingDir = new File("./").toPath();
 
     private DockerClient dockerClient;
-
 
     public TrainRunnerService(){
         dockerClient = createDockerClient();
@@ -75,7 +73,7 @@ public class TrainRunnerService {
 
     public void stopContainer (String id) throws IOException {
         dockerClient.stopContainerCmd(id).exec();
-        FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
+//        FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
     }
 
     public void addInputToTrain(String containerId, String input) throws IOException, InterruptedException {
