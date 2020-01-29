@@ -30,7 +30,8 @@ import static org.apache.http.HttpVersion.HTTP;
         matchIfMissing = true)
 public class ProductionTaskService implements TaskService {
     public static final String TASK_API_PATH =  "/api/tasks";
-    public static final String VALIDATION_API_PATH =  "/api/stations/validate/";
+    public static final String API_STATIONS =  "/api/stations";
+    public static final String STATION_NAME_PARAM =  "station-name";
     public static final String API_TRAINS = "/api/trains/%s";
     public static final String API_TRAIN_TASKS = API_TRAINS + "/tasks";
 
@@ -63,19 +64,20 @@ public class ProductionTaskService implements TaskService {
         builder.setScheme(HTTP);
         builder.setHost(centralConfig.getHostname());
         builder.setPort(centralConfig.getPort());
-        builder.setPath(VALIDATION_API_PATH.concat(stationName));
+        builder.setPath(API_STATIONS);
+        builder.addParameter(STATION_NAME_PARAM, stationName);
         try {
             webClient
                     .get()
                     .uri(builder.build().toString())
                     .retrieve()
-                    .bodyToMono(StationDto.class)
+                    .bodyToMono(StationDto[].class)
                     .block();
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()){
                 log.error("invalid station name: {}", stationName, e);
             } else {
-                log.error("error while validation station name {}.", stationName, e);
+                log.error("error while validating station name {}.", stationName, e);
             }
             return false;
         } catch (URISyntaxException e) {
