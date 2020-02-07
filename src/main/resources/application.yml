@@ -2,6 +2,13 @@ central:
   hostname: "localhost"
   port: 8080
 
+
+station:
+  environment-variables:
+    #No dashes allowed in environment variables.
+    sparql_url: "http://host.docker.internal:8080"
+    postgres_docker_database: "postgres"
+
 server:
   port: 10080
 
