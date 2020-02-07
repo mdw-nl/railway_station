@@ -5,14 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
+import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
+import nl.medicaldataworks.railway.station.config.StationConfiguration;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -30,16 +32,23 @@ public class TrainRunnerService {
     public static final String RUN_MASTER = "runMaster.sh";
     public static final String RUN_STATION = "runStation.sh";
     public static final String INPUT_FILE = "input.txt";
-    public static final String COMPLETED_TASKS_FILE = "output.txt";
-    public static final String OUTPUT_FILE = "completed-client-tasks.json";
+    public static final String COMPLETED_TASKS_FILE = "completed-client-tasks.json";
+    public static final String OUTPUT_FILE = "output.txt";
     public static final String NEW_TASKS_FILE = "new-client-tasks.json";
     private static final Path DOCKER_DIR = new File("/opt").toPath();
+    public static final String NETWORK_NAME = "station";
+    public static final String DOCKER_CERT_PATH = "~/.docker/certs";
+    public static final String DOCKER_CONFIG = "~/.docker";
+    public static final String API_VERSION = "1.30";
+    public static final String DOCKER_PATH_WINDOWS = "tcp://localhost:2375";
+    public static final String DOCKER_PATH_UNIX = "unix:///var/run/docker.sock";
     private Path workingDir = new File("./").toPath();
 
+    private StationConfiguration stationConfiguration;
     private DockerClient dockerClient;
 
-
-    public TrainRunnerService(){
+    public TrainRunnerService(StationConfiguration stationConfiguration){
+        this.stationConfiguration = stationConfiguration;
         dockerClient = createDockerClient();
     }
 
@@ -47,35 +56,52 @@ public class TrainRunnerService {
         DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
                 .withDockerHost(determineDockerHost())
                 .withDockerTlsVerify(false)
-                .withDockerCertPath("~/.docker/certs")
-                .withDockerConfig("~/.docker")
-                .withApiVersion("1.30")
+                .withDockerCertPath(DOCKER_CERT_PATH)
+                .withDockerConfig(DOCKER_CONFIG)
+                .withApiVersion(API_VERSION)
                 .build();
         return DockerClientBuilder.getInstance(config).build();
     }
 
     private String determineDockerHost(){
         if (SystemUtils.IS_OS_WINDOWS) {
-            return "tcp://localhost:2375";
+            return DOCKER_PATH_WINDOWS;
         } else {
-            return "unix:///var/run/docker.sock";
+            return DOCKER_PATH_UNIX;
         }
     }
 
-    public String startContainer (String dockerUrl) throws InterruptedException {
+    public String startContainer (String dockerUrl) throws Exception {
         dockerClient.pullImageCmd(dockerUrl).exec(new PullImageResultCallback()).awaitCompletion();
+        List<String> environmentVariables = getEnvironmentVariables();
         CreateContainerResponse container = dockerClient.createContainerCmd(dockerUrl)
                 .withAttachStderr(true)
                 .withAttachStdout(true)
+                .withEnv(environmentVariables)
+                .withHostConfig(HostConfig
+                        .newHostConfig()
+                        .withNetworkMode(NETWORK_NAME)
+                        .withAutoRemove(true))
                 .exec();
         dockerClient.startContainerCmd(container.getId()).exec();
         workingDir.resolve(container.getId()).toFile().mkdir();
+
         return container.getId();
+    }
+
+    private List<String> getEnvironmentVariables() {
+        List<String> environmentVariables = new ArrayList<>();
+        for(Map.Entry<String, String> environmentVariable : stationConfiguration.getEnvironmentVariables().entrySet()){
+            String environmentVariableString = String.format("%s=%s", environmentVariable.getKey(),
+                                                                      environmentVariable.getValue());
+            environmentVariables.add(environmentVariableString);
+        }
+        return environmentVariables;
     }
 
     public void stopContainer (String id) throws IOException {
         dockerClient.stopContainerCmd(id).exec();
-        FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
+//        FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
     }
 
     public void addInputToTrain(String containerId, String input) throws IOException, InterruptedException {

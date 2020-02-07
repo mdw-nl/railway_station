@@ -9,4 +9,5 @@ public class TrainDto {
     private String name;
     private String dockerImageUrl;
     private CalculationStatus calculationStatus;
+    private Long currentIteration;
 }

@@ -30,7 +30,8 @@ import static org.apache.http.HttpVersion.HTTP;
         matchIfMissing = true)
 public class ProductionTaskService implements TaskService {
     public static final String TASK_API_PATH =  "/api/tasks";
-    public static final String VALIDATION_API_PATH =  "/api/stations/validate/";
+    public static final String API_STATIONS =  "/api/stations";
+    public static final String STATION_NAME_PARAM =  "station-name";
     public static final String API_TRAINS = "/api/trains/%s";
     public static final String API_TRAIN_TASKS = API_TRAINS + "/tasks";
 
@@ -63,19 +64,20 @@ public class ProductionTaskService implements TaskService {
         builder.setScheme(HTTP);
         builder.setHost(centralConfig.getHostname());
         builder.setPort(centralConfig.getPort());
-        builder.setPath(VALIDATION_API_PATH.concat(stationName));
+        builder.setPath(API_STATIONS);
+        builder.addParameter(STATION_NAME_PARAM, stationName);
         try {
             webClient
                     .get()
                     .uri(builder.build().toString())
                     .retrieve()
-                    .bodyToMono(StationDto.class)
+                    .bodyToMono(StationDto[].class)
                     .block();
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()){
                 log.error("invalid station name: {}", stationName, e);
             } else {
-                log.error("error while validation station name {}.", stationName, e);
+                log.error("error while validating station name {}.", stationName, e);
             }
             return false;
         } catch (URISyntaxException e) {
@@ -99,12 +101,10 @@ public class ProductionTaskService implements TaskService {
                 log.info("",e);
             } catch (URISyntaxException e) {
                 log.error("Error while connecting to central ", e);
-            } catch (InterruptedException e) {
-                log.error("Wait timer interrupted",e);
             } catch (IOException e) {
                 log.error("Error while accessing files on host",e);
             } catch (Exception e) { //TODO need to add specific connection to server lost error for logging
-                log.error("Could not process tasks");
+                log.error("Could not process tasks", e);
             }
             Thread.sleep(DEFAULT_SLEEP_TIME);
         }
@@ -116,11 +116,9 @@ public class ProductionTaskService implements TaskService {
         builder.setHost(centralConfig.getHostname());
         builder.setPort(centralConfig.getPort());
         builder.setPath(String.format(API_TRAIN_TASKS, trainDto.getId()));
-        builder.addParameter("page", "0");
-        builder.addParameter("size", "1");
-        builder.addParameter("sort", "creationTimestamp");
         builder.addParameter("station-name", stationName);
-        builder.addParameter("calculation-status", String.valueOf(CalculationStatus.COMPLETED));
+        builder.addParameter("calculation-status", CalculationStatus.COMPLETED.name());
+        builder.addParameter("iteration", trainDto.getCurrentIteration().toString());
         return webClient
                 .get()
                 .uri(builder.build().toString())
@@ -141,7 +139,7 @@ public class ProductionTaskService implements TaskService {
         builder.addParameter("sort", "creationTimestamp");
         builder.addParameter("station-name", stationName);
 
-        builder.addParameter("calculation-status", String.valueOf(CalculationStatus.REQUESTED));
+        builder.addParameter("calculation-status", CalculationStatus.REQUESTED.name());
         return webClient
                 .get()
                 .uri(builder.build().toString())
@@ -165,37 +163,55 @@ public class ProductionTaskService implements TaskService {
     }
 
     @Override
-    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws InterruptedException, IOException, URISyntaxException {
+    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws IOException, URISyntaxException {
         log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
-        String id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
+        String id;
         try {
-            trainRunnerService.addInputToTrain(id, taskDto.getInput());//TODO filter input
-            trainRunnerService.addCompletedTasksToTrain(id, completedTaskDtos);
-            trainRunnerService.executeCommand(id, taskDto.isMaster());
-            List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(id);
-            taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
-            createNewTasks(newTaskDtos, trainDto.getId());
-            determineIdleOrCompletedCalculationStatus(taskDto, newTaskDtos);
+            id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
+            try {
+                trainRunnerService.addInputToTrain(id, taskDto.getInput());//TODO filter input
+                trainRunnerService.addCompletedTasksToTrain(id, completedTaskDtos);
+                trainRunnerService.executeCommand(id, taskDto.isMaster());
+                List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(id);
+                taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
+                createNewTasks(newTaskDtos, trainDto.getId());
+                taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
+                updateTask(taskDto);
+                if(taskDto.isMaster() && newTaskDtos.isEmpty()){
+                    updateTrainStatus(trainDto, CalculationStatus.COMPLETED);
+                }
+            }
+            catch (Exception e) {
+                taskDto.setCalculationStatus(CalculationStatus.ERRORED); //TODO add stack to result?
+                updateTask(taskDto);
+                log.error("Could not execute container.", e);
+            } finally {
+                trainRunnerService.stopContainer(id);
+            }
+        } catch (Exception e) {
+            taskDto.setCalculationStatus(CalculationStatus.ERRORED);
             updateTask(taskDto);
+            log.error("Could not start container.", e);
         }
-        catch (Exception e) {
-            taskDto.setCalculationStatus(CalculationStatus.ERRORED); //TODO add stack to result?
-            updateTask(taskDto);
-            log.error("Could not execute container.", e);
-        }
-        finally {
-            trainRunnerService.stopContainer(id);
-        }
+
     }
 
-    private void determineIdleOrCompletedCalculationStatus(TaskDto taskDto, List<TaskDto> taskDtos) {
-        if (!taskDtos.isEmpty() && taskDto.isMaster()) {
-            taskDto.setCalculationStatus(CalculationStatus.IDLE);
-        } else {
-            taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
-        }
+    private void updateTrainStatus(TrainDto trainDto, CalculationStatus calculationStatus) throws URISyntaxException {
+        trainDto.setCalculationStatus(calculationStatus);
+        URIBuilder builder = new URIBuilder();
+        builder.setScheme(HTTP);
+        builder.setHost(centralConfig.getHostname());
+        builder.setPort(centralConfig.getPort());
+        builder.setPath(String.format("/api/trains", trainDto));
+        webClient
+                .put()
+                .uri(builder.build().toString())
+                .body(BodyInserters.fromValue(trainDto))
+                .retrieve()
+                .toBodilessEntity()
+                .block();
     }
 
     @Override
