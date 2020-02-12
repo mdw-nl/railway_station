@@ -1,0 +1,21 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+stages:
+  - build
+
+build:
+  stage: build
+  image: maven:3.5.3-jdk-8
+  artifacts:
+    paths:
+      - target/*.jar
+      - src/main/resources/application.yml
+  tags:
+    - maastro
+  script:
+    - mvn clean package
+#  only:
+#    - master
