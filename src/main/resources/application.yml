@@ -1,12 +1,12 @@
 central:
-  hostname: "localhost"
-  port: 8080
+  hostname: "dcra.railway.medicaldataworks.nl"
+  port: 443
 
 
 station:
   environment-variables:
     #No dashes allowed in environment variables.
-    sparql_url: "http://host.docker.internal:8080"
+    sparql_url: "http://host.docker.internal:8888"
     postgres_docker_database: "postgres"
 
 server:
@@ -18,10 +18,10 @@ spring:
       client:
         provider:
           keycloak:
-            token-uri: http://localhost:9080/auth/realms/railway/protocol/openid-connect/token
+            token-uri: https://dcra-keycloak.railway.medicaldataworks.nl/auth/realms/railway/protocol/openid-connect/token
         registration:
           keycloak:
-            client-id: testclient
-            client-secret: "fe95901a-a153-47db-a70c-0aaba4de1cf3"
+            client-id: timh
+            client-secret: "5b2a6ee7-b9c4-4922-ad17-846258c7491e"
             authorization-grant-type: client_credentials
 

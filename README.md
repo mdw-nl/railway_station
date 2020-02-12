@@ -4,8 +4,11 @@ Station is Railways client-side application. It polls central for new tasks and 
 # Authentication
 Clients use Keycloak to authenticate by means of a client secret. The client-id and client-secret can be defined in the application.yml and should correspond with the entries defined in Keycloak. Ask your central administrator for a new client entry in keycloak.
 
-# Running and building station
-Station is a standard Spring-boot application and can be built with *mvn clean package*. To run the application, copy the target folder to a desired location after building and run *java -jar station-{VERSION}.jar*. Make sure the *client-id* and *client-secret* are configured in the *application.yml*
+# Building station
+Station is a standard Spring-boot application and can be built with *mvn clean package*.
+ 
+# Running station
+To run the application, first make sure there is a 'station' docker network. If not, run create-station-network.sh. Copy the target folder (or just the jar and application.yml) to a desired location after building and run *java -jar station-{VERSION}.jar*. Make sure the *client-id* and *client-secret* are configured in the *application.yml*
  
 # Troubleshooting
 * *finishConnect(..) failed: Connection refused* \

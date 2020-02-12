@@ -34,6 +34,7 @@ public class ProductionTaskService implements TaskService {
     public static final String STATION_NAME_PARAM =  "station-name";
     public static final String API_TRAINS = "/api/trains/%s";
     public static final String API_TRAIN_TASKS = API_TRAINS + "/tasks";
+    public static final String HTTPS = "https";
 
     private WebClient webClient;
     private CentralConfiguration centralConfig;
@@ -60,10 +61,7 @@ public class ProductionTaskService implements TaskService {
     }
 
     public boolean isClientConfigurationValid(){
-        URIBuilder builder = new URIBuilder();
-        builder.setScheme(HTTP);
-        builder.setHost(centralConfig.getHostname());
-        builder.setPort(centralConfig.getPort());
+        URIBuilder builder = createUriBuilder();
         builder.setPath(API_STATIONS);
         builder.addParameter(STATION_NAME_PARAM, stationName);
         try {
@@ -84,6 +82,18 @@ public class ProductionTaskService implements TaskService {
             log.error("invalid URI syntact in station name validation", e);
         }
         return true;
+    }
+
+    private URIBuilder createUriBuilder() {
+        URIBuilder builder = new URIBuilder();
+        if((centralConfig.getPort() % 1000) == 443){
+            builder.setScheme(HTTPS);
+        } else {
+            builder.setScheme(HTTP);
+        }
+        builder.setHost(centralConfig.getHostname());
+        builder.setPort(centralConfig.getPort());
+        return builder;
     }
 
     @Override
@@ -111,10 +121,7 @@ public class ProductionTaskService implements TaskService {
     }
 
     private TaskDto[] retrieveCompletedTasks(TrainDto trainDto) throws URISyntaxException {
-        URIBuilder builder = new URIBuilder();
-        builder.setScheme(HTTP);
-        builder.setHost(centralConfig.getHostname());
-        builder.setPort(centralConfig.getPort());
+        URIBuilder builder = createUriBuilder();
         builder.setPath(String.format(API_TRAIN_TASKS, trainDto.getId()));
         builder.addParameter("station-name", stationName);
         builder.addParameter("calculation-status", CalculationStatus.COMPLETED.name());
@@ -129,10 +136,7 @@ public class ProductionTaskService implements TaskService {
 
     @Override
     public TaskDto[] getNextTaskFromServer() throws URISyntaxException {
-        URIBuilder builder = new URIBuilder();
-        builder.setScheme(HTTP);
-        builder.setHost(centralConfig.getHostname());
-        builder.setPort(centralConfig.getPort());
+        URIBuilder builder = createUriBuilder();
         builder.setPath(TASK_API_PATH);
         builder.addParameter("page", "0");
         builder.addParameter("size", "1");
@@ -149,10 +153,7 @@ public class ProductionTaskService implements TaskService {
     }
 
     private TrainDto getTrain(Long id) throws URISyntaxException {
-        URIBuilder builder = new URIBuilder();
-        builder.setScheme(HTTP);
-        builder.setHost(centralConfig.getHostname());
-        builder.setPort(centralConfig.getPort());
+        URIBuilder builder = createUriBuilder();
         builder.setPath(String.format(API_TRAINS, id));
         return webClient
                 .get()
@@ -200,10 +201,7 @@ public class ProductionTaskService implements TaskService {
 
     private void updateTrainStatus(TrainDto trainDto, CalculationStatus calculationStatus) throws URISyntaxException {
         trainDto.setCalculationStatus(calculationStatus);
-        URIBuilder builder = new URIBuilder();
-        builder.setScheme(HTTP);
-        builder.setHost(centralConfig.getHostname());
-        builder.setPort(centralConfig.getPort());
+        URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains", trainDto));
         webClient
                 .put()
@@ -216,10 +214,7 @@ public class ProductionTaskService implements TaskService {
 
     @Override
     public void updateTask(TaskDto taskDto) throws URISyntaxException {
-        URIBuilder builder = new URIBuilder();
-        builder.setScheme(HTTP);
-        builder.setHost(centralConfig.getHostname());
-        builder.setPort(centralConfig.getPort());
+        URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrainId()));
         webClient
             .put()
@@ -233,10 +228,7 @@ public class ProductionTaskService implements TaskService {
     @Override
     public void createNewTasks(List<TaskDto> taskDtos, Long trainId) throws URISyntaxException {
         for (TaskDto taskDto: taskDtos ) {
-            URIBuilder builder = new URIBuilder();
-            builder.setScheme(HTTP);
-            builder.setHost(centralConfig.getHostname());
-            builder.setPort(centralConfig.getPort());
+            URIBuilder builder = createUriBuilder();
             builder.setPath(String.format("/api/trains/%s/tasks", trainId));
             webClient
                 .post()
