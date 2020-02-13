@@ -21,7 +21,6 @@ import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
@@ -48,6 +47,10 @@ public class ProductionTaskService implements TaskService {
     private TrainRunnerService trainRunnerService;
     @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
     private String stationName;
+    @Value("${spring.security.oauth2.client.registration.keycloak.client-secret}")
+    private String stationSecret;
+    @Value("${spring.security.oauth2.client.provider.keycloak.token-uri}")
+    private String tokenUrl = "https://dcra-keycloak.railway.medicaldataworks.nl/auth/realms/railway/protocol/openid-connect/token";
     private static final long DEFAULT_SLEEP_TIME = 5000;
 
     public ProductionTaskService(RestTemplate restTemplate, CentralConfiguration centralConfig,
@@ -67,12 +70,10 @@ public class ProductionTaskService implements TaskService {
     }
 
     HttpEntity<Object> createHttpEntity(){
-        String username = "timh";
-        String password = "5b2a6ee7-b9c4-4922-ad17-846258c7491e";
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("grant_type", "client_credentials");
         HttpHeaders httpHeaders =  new HttpHeaders() {{
-            String auth = username + ":" + password;
+            String auth = stationName + ":" + stationSecret;
             byte[] encodedAuth = Base64.encodeBase64(
                     auth.getBytes(StandardCharsets.US_ASCII) );
             String authHeader = "Basic " + new String( encodedAuth );
@@ -83,7 +84,7 @@ public class ProductionTaskService implements TaskService {
 
     String getAccessToken(){
         HttpEntity<Object> httpEntity = createHttpEntity();
-        TokenObject tokenObject = restTemplate.postForObject("https://dcra-keycloak.railway.medicaldataworks.nl/auth/realms/railway/protocol/openid-connect/token", httpEntity, TokenObject.class);
+        TokenObject tokenObject = restTemplate.postForObject(tokenUrl, httpEntity, TokenObject.class);
         return tokenObject.getAccess_token();
     }
 
@@ -146,6 +147,7 @@ public class ProductionTaskService implements TaskService {
         builder.addParameter("calculation-status", CalculationStatus.COMPLETED.name());
         builder.addParameter("iteration", trainDto.getCurrentIteration().toString());
         builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         return restTemplate.getForObject(builder.build().toString(), TaskDto[].class);
     }
 
@@ -160,6 +162,7 @@ public class ProductionTaskService implements TaskService {
 
         builder.addParameter("calculation-status", CalculationStatus.REQUESTED.name());
         builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         return restTemplate.getForObject(builder.build().toString(), TaskDto[].class);
     }
 
@@ -167,12 +170,13 @@ public class ProductionTaskService implements TaskService {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format(API_TRAINS, id));
         builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         return restTemplate.getForObject(builder.build().toString(), TrainDto.class);
     }
 
     @Override
     public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws IOException, URISyntaxException {
-        log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
+        log.trace("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
         String id;
@@ -211,7 +215,7 @@ public class ProductionTaskService implements TaskService {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains", trainDto));
         builder.addParameter("access_token", getAccessToken());
-        builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         restTemplate.put(builder.build().toString(), trainDto);
     }
 
@@ -220,7 +224,7 @@ public class ProductionTaskService implements TaskService {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrainId()));
         builder.addParameter("access_token", getAccessToken());
-        builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         restTemplate.put(builder.build().toString(), taskDto);
     }
 
@@ -230,6 +234,7 @@ public class ProductionTaskService implements TaskService {
             URIBuilder builder = createUriBuilder();
             builder.setPath(String.format("/api/trains/%s/tasks", trainId));
             builder.addParameter("access_token", getAccessToken());
+            log.trace("url: {}", builder.build().toString());
             restTemplate.postForLocation(builder.build().toString(), taskDto);
         }
     }
