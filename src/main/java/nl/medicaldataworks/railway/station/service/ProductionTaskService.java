@@ -4,19 +4,25 @@ package nl.medicaldataworks.railway.station.service;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.CentralConfiguration;
 import nl.medicaldataworks.railway.station.domain.CalculationStatus;
+import nl.medicaldataworks.railway.station.domain.TokenObject;
 import nl.medicaldataworks.railway.station.web.dto.StationDto;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
 import nl.medicaldataworks.railway.station.web.dto.TrainDto;
+import org.apache.commons.codec.binary.Base64;
 import org.apache.http.client.utils.URIBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.BodyInserters;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
@@ -36,17 +42,17 @@ public class ProductionTaskService implements TaskService {
     public static final String API_TRAIN_TASKS = API_TRAINS + "/tasks";
     public static final String HTTPS = "https";
 
-    private WebClient webClient;
+    public final RestTemplate restTemplate;
+
     private CentralConfiguration centralConfig;
     private TrainRunnerService trainRunnerService;
     @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
     private String stationName;
     private static final long DEFAULT_SLEEP_TIME = 5000;
 
-    public ProductionTaskService(WebClient webClient,
-                                 CentralConfiguration centralConfig,
+    public ProductionTaskService(RestTemplate restTemplate, CentralConfiguration centralConfig,
                                  TrainRunnerService trainRunnerService) {
-        this.webClient = webClient;
+        this.restTemplate = restTemplate;
         this.centralConfig = centralConfig;
         this.trainRunnerService = trainRunnerService;
     }
@@ -60,24 +66,39 @@ public class ProductionTaskService implements TaskService {
         pollForNewTasks();
     }
 
+    HttpEntity<Object> createHttpEntity(){
+        String username = "timh";
+        String password = "5b2a6ee7-b9c4-4922-ad17-846258c7491e";
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("grant_type", "client_credentials");
+        HttpHeaders httpHeaders =  new HttpHeaders() {{
+            String auth = username + ":" + password;
+            byte[] encodedAuth = Base64.encodeBase64(
+                    auth.getBytes(StandardCharsets.US_ASCII) );
+            String authHeader = "Basic " + new String( encodedAuth );
+            set( "Authorization", authHeader );
+        }};
+        return new HttpEntity<>(body, httpHeaders);
+    }
+
+    String getAccessToken(){
+        HttpEntity<Object> httpEntity = createHttpEntity();
+        TokenObject tokenObject = restTemplate.postForObject("https://dcra-keycloak.railway.medicaldataworks.nl/auth/realms/railway/protocol/openid-connect/token", httpEntity, TokenObject.class);
+        return tokenObject.getAccess_token();
+    }
+
     public boolean isClientConfigurationValid(){
         URIBuilder builder = createUriBuilder();
         builder.setPath(API_STATIONS);
         builder.addParameter(STATION_NAME_PARAM, stationName);
+
+
         try {
-            webClient
-                    .get()
-                    .uri(builder.build().toString())
-                    .retrieve()
-                    .bodyToMono(StationDto[].class)
-                    .block();
-        } catch (WebClientResponseException e) {
-            if (e.getStatusCode().is4xxClientError()){
-                log.error("invalid station name: {}", stationName, e);
-            } else {
-                log.error("error while validating station name {}.", stationName, e);
+            builder.addParameter("access_token", getAccessToken());
+            StationDto[] stations = restTemplate.getForObject(builder.build().toString(), StationDto[].class);
+            if(stations.length == 0){
+                return false;
             }
-            return false;
         } catch (URISyntaxException e) {
             log.error("invalid URI syntact in station name validation", e);
         }
@@ -107,8 +128,6 @@ public class ProductionTaskService implements TaskService {
                     List<TaskDto> completedTasks = Arrays.asList(retrieveCompletedTasks(trainDto));
                     performTask(task[0], trainDto, completedTasks);
                 }
-            } catch (WebClientResponseException e) {
-                log.info("",e);
             } catch (URISyntaxException e) {
                 log.error("Error while connecting to central ", e);
             } catch (IOException e) {
@@ -126,12 +145,8 @@ public class ProductionTaskService implements TaskService {
         builder.addParameter("station-name", stationName);
         builder.addParameter("calculation-status", CalculationStatus.COMPLETED.name());
         builder.addParameter("iteration", trainDto.getCurrentIteration().toString());
-        return webClient
-                .get()
-                .uri(builder.build().toString())
-                .retrieve()
-                .bodyToMono(TaskDto[].class)
-                .block();
+        builder.addParameter("access_token", getAccessToken());
+        return restTemplate.getForObject(builder.build().toString(), TaskDto[].class);
     }
 
     @Override
@@ -144,23 +159,15 @@ public class ProductionTaskService implements TaskService {
         builder.addParameter("station-name", stationName);
 
         builder.addParameter("calculation-status", CalculationStatus.REQUESTED.name());
-        return webClient
-                .get()
-                .uri(builder.build().toString())
-                .retrieve()
-                .bodyToMono(TaskDto[].class)
-                .block();
+        builder.addParameter("access_token", getAccessToken());
+        return restTemplate.getForObject(builder.build().toString(), TaskDto[].class);
     }
 
     private TrainDto getTrain(Long id) throws URISyntaxException {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format(API_TRAINS, id));
-        return webClient
-                .get()
-                .uri(builder.build().toString())
-                .retrieve()
-                .bodyToMono(TrainDto.class)
-                .block();
+        builder.addParameter("access_token", getAccessToken());
+        return restTemplate.getForObject(builder.build().toString(), TrainDto.class);
     }
 
     @Override
@@ -203,26 +210,18 @@ public class ProductionTaskService implements TaskService {
         trainDto.setCalculationStatus(calculationStatus);
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains", trainDto));
-        webClient
-                .put()
-                .uri(builder.build().toString())
-                .body(BodyInserters.fromValue(trainDto))
-                .retrieve()
-                .toBodilessEntity()
-                .block();
+        builder.addParameter("access_token", getAccessToken());
+        builder.addParameter("access_token", getAccessToken());
+        restTemplate.put(builder.build().toString(), trainDto);
     }
 
     @Override
     public void updateTask(TaskDto taskDto) throws URISyntaxException {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrainId()));
-        webClient
-            .put()
-            .uri(builder.build().toString())
-            .body(BodyInserters.fromValue(taskDto))
-            .retrieve()
-            .toBodilessEntity()
-            .block();
+        builder.addParameter("access_token", getAccessToken());
+        builder.addParameter("access_token", getAccessToken());
+        restTemplate.put(builder.build().toString(), taskDto);
     }
 
     @Override
@@ -230,13 +229,8 @@ public class ProductionTaskService implements TaskService {
         for (TaskDto taskDto: taskDtos ) {
             URIBuilder builder = createUriBuilder();
             builder.setPath(String.format("/api/trains/%s/tasks", trainId));
-            webClient
-                .post()
-                .uri(builder.build().toString())
-                .body(BodyInserters.fromValue(taskDto))
-                .retrieve()
-                .toBodilessEntity()
-                .block();
+            builder.addParameter("access_token", getAccessToken());
+            restTemplate.postForLocation(builder.build().toString(), taskDto);
         }
     }
 }
