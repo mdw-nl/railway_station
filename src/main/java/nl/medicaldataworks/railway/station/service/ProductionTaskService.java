@@ -183,6 +183,8 @@ public class ProductionTaskService implements TaskService {
         try {
             id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
             try {
+                String errorString = trainRunnerService.parseLogsFromTrain(id);
+                log.info("Error log: {}", errorString);
                 trainRunnerService.addInputToTrain(id, taskDto.getInput());//TODO filter input
                 trainRunnerService.addCompletedTasksToTrain(id, completedTaskDtos);
                 trainRunnerService.executeCommand(id, taskDto.isMaster());

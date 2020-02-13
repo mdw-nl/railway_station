@@ -17,12 +17,15 @@ import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.StationConfiguration;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -36,6 +39,7 @@ public class TrainRunnerService {
     public static final String RUN_STATION = "runStation.sh";
     public static final String INPUT_FILE = "input.txt";
     public static final String COMPLETED_TASKS_FILE = "completed-client-tasks.json";
+    public static final String LOG_FILE = "error.log";
     public static final String OUTPUT_FILE = "output.txt";
     public static final String NEW_TASKS_FILE = "new-client-tasks.json";
     private static final Path DOCKER_DIR = new File("/opt").toPath();
@@ -123,6 +127,14 @@ public class TrainRunnerService {
         Files.write(completedTasksFile, jsonString.getBytes());
         String cmd = "docker cp " + completedTasksFile.toString() + " " + containerId + ":" + DOCKER_DIR.resolve(COMPLETED_TASKS_FILE).toString();
         java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+    }
+
+    public String parseLogsFromTrain(String containerId) throws IOException, InterruptedException {
+        Path logFile = workingDir.resolve(containerId).resolve(LOG_FILE);
+        String cmd = "docker cp " + containerId + ":" + DOCKER_DIR.resolve(LOG_FILE).toString() + " "  + logFile.toString();
+        java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+        FileInputStream fileInputStream = new FileInputStream(logFile.toFile());
+        return IOUtils.toString(fileInputStream, StandardCharsets.UTF_8.name());
     }
 
     public String readOutputFromTrain(String containerId) throws IOException, InterruptedException {
