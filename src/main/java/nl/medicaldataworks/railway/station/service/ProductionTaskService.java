@@ -24,6 +24,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 
 import static org.apache.http.HttpVersion.HTTP;
 
@@ -177,22 +178,22 @@ public class ProductionTaskService implements TaskService {
         log.trace("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
-        String id;
+        String containerId;
         try {
-            id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
+            containerId = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
             try {
-                trainRunnerService.addInputToTrain(id, taskDto.getInput());
-                trainRunnerService.addCompletedTasksToTrain(id, completedTaskDtos);
-                trainRunnerService.executeCommand(id, taskDto.isMaster());
-                processTrainResults(trainDto, taskDto, id);
+                trainRunnerService.addInputToTrain(containerId, taskDto.getInput());
+                trainRunnerService.addCompletedTasksToTrain(containerId, completedTaskDtos);
+                trainRunnerService.executeCommand(containerId, taskDto.isMaster());
+                processTrainResults(trainDto, taskDto, containerId);
             }
             catch (Exception e) {
-                handleTrainExceptoion(trainDto, taskDto, e);
+                handleTrainExceptoion(containerId, trainDto, taskDto, e);
             } finally {
-                trainRunnerService.stopContainer(id);
+                trainRunnerService.stopContainer(containerId);
             }
         } catch (Exception e) {
-            handleTrainExceptoion(trainDto, taskDto, e);
+            handleTrainExceptoion(UUID.randomUUID().toString(), trainDto, taskDto, e);
         }
     }
 
@@ -209,14 +210,14 @@ public class ProductionTaskService implements TaskService {
         }
     }
 
-    private void handleTrainExceptoion(TrainDto trainDto, TaskDto taskDto, Exception e) throws URISyntaxException {
+    private void handleTrainExceptoion(String containerId, TrainDto trainDto, TaskDto taskDto, Exception e) throws URISyntaxException {
         taskDto.setCalculationStatus(CalculationStatus.ERRORED);
-        taskDto.setError(Arrays.toString(e.getStackTrace()));
+        taskDto.setError("UUID: ".concat(containerId).concat("\n message: ").concat(e.getMessage()));
         updateTask(taskDto);
         if(taskDto.isMaster()){
             updateTrainStatus(trainDto, CalculationStatus.ERRORED);
         }
-        log.error("Could not execute container.", e);
+        log.error("Could not execute container. UUID: {}", containerId, e);
     }
 
     private void updateTrainStatus(TrainDto trainDto, CalculationStatus calculationStatus) throws URISyntaxException {
