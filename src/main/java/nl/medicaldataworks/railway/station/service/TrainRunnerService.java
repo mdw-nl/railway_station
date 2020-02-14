@@ -17,6 +17,7 @@ import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.StationConfiguration;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.springframework.stereotype.Service;
@@ -39,7 +40,8 @@ public class TrainRunnerService {
     public static final String RUN_STATION = "runStation.sh";
     public static final String INPUT_FILE = "input.txt";
     public static final String COMPLETED_TASKS_FILE = "completed-client-tasks.json";
-    public static final String LOG_FILE = "error.log";
+    public static final String LOG_FILE = "train.log";
+    public static final String ERROR_LOG_FILE = "error.log";
     public static final String OUTPUT_FILE = "output.txt";
     public static final String NEW_TASKS_FILE = "new-client-tasks.json";
     private static final Path DOCKER_DIR = new File("/opt").toPath();
@@ -110,7 +112,9 @@ public class TrainRunnerService {
 
     public void stopContainer (String id) throws IOException {
         dockerClient.stopContainerCmd(id).exec();
-//        FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
+        if (!stationConfiguration.getEnableAudit()) {
+            FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
+        }
     }
 
     public void addInputToTrain(String containerId, String input) throws IOException, InterruptedException {
@@ -129,12 +133,22 @@ public class TrainRunnerService {
         java.lang.Runtime.getRuntime().exec(cmd).waitFor();
     }
 
-    public String parseLogsFromTrain(String containerId) throws IOException, InterruptedException {
+    public String parseAppLogsFromTrain(String containerId) throws IOException, InterruptedException {
         Path logFile = workingDir.resolve(containerId).resolve(LOG_FILE);
         String cmd = "docker cp " + containerId + ":" + DOCKER_DIR.resolve(LOG_FILE).toString() + " "  + logFile.toString();
         java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+        return logFile.toAbsolutePath().toString();
+    }
+
+    public void parseErrorLogsFromTrain(String containerId) throws Exception {
+        Path logFile = workingDir.resolve(containerId).resolve(ERROR_LOG_FILE);
+        String cmd = "docker cp " + containerId + ":" + DOCKER_DIR.resolve(ERROR_LOG_FILE).toString() + " "  + logFile.toString();
+        java.lang.Runtime.getRuntime().exec(cmd).waitFor();
         FileInputStream fileInputStream = new FileInputStream(logFile.toFile());
-        return IOUtils.toString(fileInputStream, StandardCharsets.UTF_8.name());
+        String errorLog = IOUtils.toString(fileInputStream, StandardCharsets.UTF_8.name());
+        if (!errorLog.isEmpty()){
+            throw(new Exception(errorLog));
+        }
     }
 
     public String readOutputFromTrain(String containerId) throws IOException, InterruptedException {

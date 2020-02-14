@@ -131,9 +131,7 @@ public class ProductionTaskService implements TaskService {
                 }
             } catch (URISyntaxException e) {
                 log.error("Error while connecting to central ", e);
-            } catch (IOException e) {
-                log.error("Error while accessing files on host",e);
-            } catch (Exception e) { //TODO need to add specific connection to server lost error for logging
+            } catch (Exception e) {
                 log.error("Could not process tasks", e);
             }
             Thread.sleep(DEFAULT_SLEEP_TIME);
@@ -175,7 +173,7 @@ public class ProductionTaskService implements TaskService {
     }
 
     @Override
-    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws IOException, URISyntaxException {
+    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws URISyntaxException {
         log.trace("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
@@ -183,33 +181,42 @@ public class ProductionTaskService implements TaskService {
         try {
             id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
             try {
-                String errorString = trainRunnerService.parseLogsFromTrain(id);
-                log.info("Error log: {}", errorString);
-                trainRunnerService.addInputToTrain(id, taskDto.getInput());//TODO filter input
+                trainRunnerService.addInputToTrain(id, taskDto.getInput());
                 trainRunnerService.addCompletedTasksToTrain(id, completedTaskDtos);
                 trainRunnerService.executeCommand(id, taskDto.isMaster());
-                List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(id);
-                taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
-                createNewTasks(newTaskDtos, trainDto.getId());
-                taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
-                updateTask(taskDto);
-                if(taskDto.isMaster() && newTaskDtos.isEmpty()){
-                    updateTrainStatus(trainDto, CalculationStatus.COMPLETED);
-                }
+                processTrainResults(trainDto, taskDto, id);
             }
             catch (Exception e) {
-                taskDto.setCalculationStatus(CalculationStatus.ERRORED); //TODO add stack to result?
-                updateTask(taskDto);
-                log.error("Could not execute container.", e);
+                handleTrainExceptoion(trainDto, taskDto, e);
             } finally {
                 trainRunnerService.stopContainer(id);
             }
         } catch (Exception e) {
-            taskDto.setCalculationStatus(CalculationStatus.ERRORED);
-            updateTask(taskDto);
-            log.error("Could not start container.", e);
+            handleTrainExceptoion(trainDto, taskDto, e);
         }
+    }
 
+    private void processTrainResults(TrainDto trainDto, TaskDto taskDto, String containerId) throws Exception {
+        taskDto.setLogLocation(trainRunnerService.parseAppLogsFromTrain(containerId));
+        trainRunnerService.parseErrorLogsFromTrain(containerId);
+        List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(containerId);
+        createNewTasks(newTaskDtos, trainDto.getId());
+        taskDto.setResult(trainRunnerService.readOutputFromTrain(containerId));
+        taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
+        updateTask(taskDto);
+        if(taskDto.isMaster() && newTaskDtos.isEmpty()) {
+            updateTrainStatus(trainDto, CalculationStatus.COMPLETED);
+        }
+    }
+
+    private void handleTrainExceptoion(TrainDto trainDto, TaskDto taskDto, Exception e) throws URISyntaxException {
+        taskDto.setCalculationStatus(CalculationStatus.ERRORED);
+        taskDto.setError(Arrays.toString(e.getStackTrace()));
+        updateTask(taskDto);
+        if(taskDto.isMaster()){
+            updateTrainStatus(trainDto, CalculationStatus.ERRORED);
+        }
+        log.error("Could not execute container.", e);
     }
 
     private void updateTrainStatus(TrainDto trainDto, CalculationStatus calculationStatus) throws URISyntaxException {

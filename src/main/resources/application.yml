@@ -4,6 +4,7 @@ central:
 
 
 station:
+  enable-audit: false
   environment-variables:
     #No dashes allowed in environment variables.
     sparql_url: "http://host.docker.internal:8888"
