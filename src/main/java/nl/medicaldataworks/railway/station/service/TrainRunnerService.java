@@ -5,11 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
+import com.github.dockerjava.api.command.LogContainerCmd;
+import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
+import com.github.dockerjava.core.command.LogContainerResultCallback;
 import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.StationConfiguration;
@@ -84,6 +87,8 @@ public class TrainRunnerService {
                         .withAutoRemove(true))
                 .exec();
         dockerClient.startContainerCmd(container.getId()).exec();
+        List<String> dockerLogs = getDockerLogs(container.getId());
+        log.info("docker logs: " + dockerLogs.toString());
         workingDir.resolve(container.getId()).toFile().mkdir();
 
         return container.getId();
@@ -159,5 +164,26 @@ public class TrainRunnerService {
         dockerClient.execStartCmd(execCreateCmdResponse.getId())
                 .exec(new ExecStartResultCallback(stdout, stderr)).awaitCompletion();
         log.info("Output from the container: {}", stdout);
+    }
+
+    public List<String> getDockerLogs(String containerId) {
+        final List<String> logs = new ArrayList<>();
+
+        LogContainerCmd logContainerCmd = dockerClient.logContainerCmd(containerId);
+        logContainerCmd.withStdOut(true).withStdErr(true);
+        logContainerCmd.withTimestamps(true);
+
+        try {
+            logContainerCmd.exec(new LogContainerResultCallback() {
+                @Override
+                public void onNext(Frame item) {
+                    logs.add(item.toString());
+                }
+            }).awaitCompletion();
+        } catch (InterruptedException e) {
+            log.error("Interruption getting container logs.", e);
+        }
+
+        return logs;
     }
 }
