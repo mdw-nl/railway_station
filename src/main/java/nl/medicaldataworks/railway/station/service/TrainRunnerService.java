@@ -93,8 +93,6 @@ public class TrainRunnerService {
                         .withAutoRemove(true))
                 .exec();
         dockerClient.startContainerCmd(container.getId()).exec();
-        List<String> dockerLogs = getDockerLogs(container.getId());
-        log.info("docker logs: " + dockerLogs.toString());
         workingDir.resolve(container.getId()).toFile().mkdir();
 
         return container.getId();
@@ -190,26 +188,5 @@ public class TrainRunnerService {
         dockerClient.execStartCmd(execCreateCmdResponse.getId())
                 .exec(new ExecStartResultCallback(stdout, stderr)).awaitCompletion();
         log.info("Output from the container: {}", stdout);
-    }
-
-    public List<String> getDockerLogs(String containerId) {
-        final List<String> logs = new ArrayList<>();
-
-        LogContainerCmd logContainerCmd = dockerClient.logContainerCmd(containerId);
-        logContainerCmd.withStdOut(true).withStdErr(true);
-        logContainerCmd.withTimestamps(true);
-
-        try {
-            logContainerCmd.exec(new LogContainerResultCallback() {
-                @Override
-                public void onNext(Frame item) {
-                    logs.add(item.toString());
-                }
-            }).awaitCompletion();
-        } catch (InterruptedException e) {
-            log.error("Interruption getting container logs.", e);
-        }
-
-        return logs;
     }
 }
