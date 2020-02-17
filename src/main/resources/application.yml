@@ -1,10 +1,18 @@
+logging:
+  level:
+    root: INFO
+    nl.medicaldataworks: DEBUG
+  #    org.springframework.web: DEBUG
+  file:
+    name: station.log
+
 central:
   hostname: "dcra.railway.medicaldataworks.nl"
   port: 443
 
 
 station:
-  enable-audit: false
+  enable-audit: true
   environment-variables:
     #No dashes allowed in environment variables.
     sparql_url: "http://host.docker.internal:8888"
