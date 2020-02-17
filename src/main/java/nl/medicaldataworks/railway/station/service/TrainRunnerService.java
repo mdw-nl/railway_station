@@ -17,12 +17,16 @@ import com.github.dockerjava.core.command.PullImageResultCallback;
 import lombok.extern.slf4j.Slf4j;
 import nl.medicaldataworks.railway.station.config.StationConfiguration;
 import nl.medicaldataworks.railway.station.web.dto.TaskDto;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -36,6 +40,8 @@ public class TrainRunnerService {
     public static final String RUN_STATION = "runStation.sh";
     public static final String INPUT_FILE = "input.txt";
     public static final String COMPLETED_TASKS_FILE = "completed-client-tasks.json";
+    public static final String LOG_FILE = "train.log";
+    public static final String ERROR_LOG_FILE = "error.log";
     public static final String OUTPUT_FILE = "output.txt";
     public static final String NEW_TASKS_FILE = "new-client-tasks.json";
     private static final Path DOCKER_DIR = new File("/opt").toPath();
@@ -87,8 +93,6 @@ public class TrainRunnerService {
                         .withAutoRemove(true))
                 .exec();
         dockerClient.startContainerCmd(container.getId()).exec();
-        List<String> dockerLogs = getDockerLogs(container.getId());
-        log.info("docker logs: " + dockerLogs.toString());
         workingDir.resolve(container.getId()).toFile().mkdir();
 
         return container.getId();
@@ -106,7 +110,9 @@ public class TrainRunnerService {
 
     public void stopContainer (String id) throws IOException {
         dockerClient.stopContainerCmd(id).exec();
-//        FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
+        if (!stationConfiguration.getEnableAudit()) {
+            FileUtils.deleteDirectory(workingDir.resolve(id).toFile());
+        }
     }
 
     public void addInputToTrain(String containerId, String input) throws IOException, InterruptedException {
@@ -123,6 +129,24 @@ public class TrainRunnerService {
         Files.write(completedTasksFile, jsonString.getBytes());
         String cmd = "docker cp " + completedTasksFile.toString() + " " + containerId + ":" + DOCKER_DIR.resolve(COMPLETED_TASKS_FILE).toString();
         java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+    }
+
+    public String parseAppLogsFromTrain(String containerId) throws IOException, InterruptedException {
+        Path logFile = workingDir.resolve(containerId).resolve(LOG_FILE);
+        String cmd = "docker cp " + containerId + ":" + DOCKER_DIR.resolve(LOG_FILE).toString() + " "  + logFile.toString();
+        java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+        return logFile.toAbsolutePath().toString();
+    }
+
+    public void parseErrorLogsFromTrain(String containerId) throws Exception {
+        Path logFile = workingDir.resolve(containerId).resolve(ERROR_LOG_FILE);
+        String cmd = "docker cp " + containerId + ":" + DOCKER_DIR.resolve(ERROR_LOG_FILE).toString() + " "  + logFile.toString();
+        java.lang.Runtime.getRuntime().exec(cmd).waitFor();
+        FileInputStream fileInputStream = new FileInputStream(logFile.toFile());
+        String errorLog = IOUtils.toString(fileInputStream, StandardCharsets.UTF_8.name());
+        if (!errorLog.isEmpty()){
+            throw(new Exception(errorLog));
+        }
     }
 
     public String readOutputFromTrain(String containerId) throws IOException, InterruptedException {
@@ -164,26 +188,5 @@ public class TrainRunnerService {
         dockerClient.execStartCmd(execCreateCmdResponse.getId())
                 .exec(new ExecStartResultCallback(stdout, stderr)).awaitCompletion();
         log.info("Output from the container: {}", stdout);
-    }
-
-    public List<String> getDockerLogs(String containerId) {
-        final List<String> logs = new ArrayList<>();
-
-        LogContainerCmd logContainerCmd = dockerClient.logContainerCmd(containerId);
-        logContainerCmd.withStdOut(true).withStdErr(true);
-        logContainerCmd.withTimestamps(true);
-
-        try {
-            logContainerCmd.exec(new LogContainerResultCallback() {
-                @Override
-                public void onNext(Frame item) {
-                    logs.add(item.toString());
-                }
-            }).awaitCompletion();
-        } catch (InterruptedException e) {
-            log.error("Interruption getting container logs.", e);
-        }
-
-        return logs;
     }
 }

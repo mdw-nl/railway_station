@@ -21,10 +21,10 @@ import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 
 import static org.apache.http.HttpVersion.HTTP;
 
@@ -48,6 +48,10 @@ public class ProductionTaskService implements TaskService {
     private TrainRunnerService trainRunnerService;
     @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
     private String stationName;
+    @Value("${spring.security.oauth2.client.registration.keycloak.client-secret}")
+    private String stationSecret;
+    @Value("${spring.security.oauth2.client.provider.keycloak.token-uri}")
+    private String tokenUrl = "https://dcra-keycloak.railway.medicaldataworks.nl/auth/realms/railway/protocol/openid-connect/token";
     private static final long DEFAULT_SLEEP_TIME = 5000;
 
     public ProductionTaskService(RestTemplate restTemplate, CentralConfiguration centralConfig,
@@ -67,12 +71,10 @@ public class ProductionTaskService implements TaskService {
     }
 
     HttpEntity<Object> createHttpEntity(){
-        String username = "timh";
-        String password = "5b2a6ee7-b9c4-4922-ad17-846258c7491e";
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("grant_type", "client_credentials");
         HttpHeaders httpHeaders =  new HttpHeaders() {{
-            String auth = username + ":" + password;
+            String auth = stationName + ":" + stationSecret;
             byte[] encodedAuth = Base64.encodeBase64(
                     auth.getBytes(StandardCharsets.US_ASCII) );
             String authHeader = "Basic " + new String( encodedAuth );
@@ -83,7 +85,7 @@ public class ProductionTaskService implements TaskService {
 
     String getAccessToken(){
         HttpEntity<Object> httpEntity = createHttpEntity();
-        TokenObject tokenObject = restTemplate.postForObject("https://dcra-keycloak.railway.medicaldataworks.nl/auth/realms/railway/protocol/openid-connect/token", httpEntity, TokenObject.class);
+        TokenObject tokenObject = restTemplate.postForObject(tokenUrl, httpEntity, TokenObject.class);
         return tokenObject.getAccess_token();
     }
 
@@ -130,9 +132,7 @@ public class ProductionTaskService implements TaskService {
                 }
             } catch (URISyntaxException e) {
                 log.error("Error while connecting to central ", e);
-            } catch (IOException e) {
-                log.error("Error while accessing files on host",e);
-            } catch (Exception e) { //TODO need to add specific connection to server lost error for logging
+            } catch (Exception e) {
                 log.error("Could not process tasks", e);
             }
             Thread.sleep(DEFAULT_SLEEP_TIME);
@@ -146,6 +146,7 @@ public class ProductionTaskService implements TaskService {
         builder.addParameter("calculation-status", CalculationStatus.COMPLETED.name());
         builder.addParameter("iteration", trainDto.getCurrentIteration().toString());
         builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         return restTemplate.getForObject(builder.build().toString(), TaskDto[].class);
     }
 
@@ -160,6 +161,7 @@ public class ProductionTaskService implements TaskService {
 
         builder.addParameter("calculation-status", CalculationStatus.REQUESTED.name());
         builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         return restTemplate.getForObject(builder.build().toString(), TaskDto[].class);
     }
 
@@ -167,43 +169,55 @@ public class ProductionTaskService implements TaskService {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format(API_TRAINS, id));
         builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         return restTemplate.getForObject(builder.build().toString(), TrainDto.class);
     }
 
     @Override
-    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws IOException, URISyntaxException {
-        log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
+    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws URISyntaxException {
+        log.trace("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
-        String id;
+        String containerId;
         try {
-            id = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
+            containerId = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
             try {
-                trainRunnerService.addInputToTrain(id, taskDto.getInput());//TODO filter input
-                trainRunnerService.addCompletedTasksToTrain(id, completedTaskDtos);
-                trainRunnerService.executeCommand(id, taskDto.isMaster());
-                List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(id);
-                taskDto.setResult(trainRunnerService.readOutputFromTrain(id));
-                createNewTasks(newTaskDtos, trainDto.getId());
-                taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
-                updateTask(taskDto);
-                if(taskDto.isMaster() && newTaskDtos.isEmpty()){
-                    updateTrainStatus(trainDto, CalculationStatus.COMPLETED);
-                }
+                trainRunnerService.addInputToTrain(containerId, taskDto.getInput());
+                trainRunnerService.addCompletedTasksToTrain(containerId, completedTaskDtos);
+                trainRunnerService.executeCommand(containerId, taskDto.isMaster());
+                processTrainResults(trainDto, taskDto, containerId);
             }
             catch (Exception e) {
-                taskDto.setCalculationStatus(CalculationStatus.ERRORED); //TODO add stack to result?
-                updateTask(taskDto);
-                log.error("Could not execute container.", e);
+                handleTrainExceptoion(containerId, trainDto, taskDto, e);
             } finally {
-                trainRunnerService.stopContainer(id);
+                trainRunnerService.stopContainer(containerId);
             }
         } catch (Exception e) {
-            taskDto.setCalculationStatus(CalculationStatus.ERRORED);
-            updateTask(taskDto);
-            log.error("Could not start container.", e);
+            handleTrainExceptoion(UUID.randomUUID().toString(), trainDto, taskDto, e);
         }
+    }
 
+    private void processTrainResults(TrainDto trainDto, TaskDto taskDto, String containerId) throws Exception {
+        taskDto.setLogLocation(trainRunnerService.parseAppLogsFromTrain(containerId));
+        trainRunnerService.parseErrorLogsFromTrain(containerId);
+        List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(containerId);
+        createNewTasks(newTaskDtos, trainDto.getId());
+        taskDto.setResult(trainRunnerService.readOutputFromTrain(containerId));
+        taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
+        updateTask(taskDto);
+        if(taskDto.isMaster() && newTaskDtos.isEmpty()) {
+            updateTrainStatus(trainDto, CalculationStatus.COMPLETED);
+        }
+    }
+
+    private void handleTrainExceptoion(String containerId, TrainDto trainDto, TaskDto taskDto, Exception e) throws URISyntaxException {
+        taskDto.setCalculationStatus(CalculationStatus.ERRORED);
+        taskDto.setError("UUID: ".concat(containerId).concat("\n message: ").concat(e.getMessage()));
+        updateTask(taskDto);
+        if(taskDto.isMaster()){
+            updateTrainStatus(trainDto, CalculationStatus.ERRORED);
+        }
+        log.error("Could not execute container. UUID: {}", containerId, e);
     }
 
     private void updateTrainStatus(TrainDto trainDto, CalculationStatus calculationStatus) throws URISyntaxException {
@@ -211,7 +225,7 @@ public class ProductionTaskService implements TaskService {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains", trainDto));
         builder.addParameter("access_token", getAccessToken());
-        builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         restTemplate.put(builder.build().toString(), trainDto);
     }
 
@@ -220,7 +234,7 @@ public class ProductionTaskService implements TaskService {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrainId()));
         builder.addParameter("access_token", getAccessToken());
-        builder.addParameter("access_token", getAccessToken());
+        log.trace("url: {}", builder.build().toString());
         restTemplate.put(builder.build().toString(), taskDto);
     }
 
@@ -230,6 +244,7 @@ public class ProductionTaskService implements TaskService {
             URIBuilder builder = createUriBuilder();
             builder.setPath(String.format("/api/trains/%s/tasks", trainId));
             builder.addParameter("access_token", getAccessToken());
+            log.trace("url: {}", builder.build().toString());
             restTemplate.postForLocation(builder.build().toString(), taskDto);
         }
     }
