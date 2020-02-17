@@ -13,4 +13,5 @@ import java.util.Map;
 @EnableConfigurationProperties
 public class StationConfiguration {
     private Map<String, String> environmentVariables;
+    private Boolean enableAudit;
 }
