@@ -31,6 +31,6 @@ spring:
         registration:
           keycloak:
             client-id: timh
-            client-secret: "7e01721d-44c3-4ca2-9f8f-a99f140aaa07"
+            client-secret: "b70c3982-cad2-43c8-8eef-14391aa373e6"
             authorization-grant-type: client_credentials
 
