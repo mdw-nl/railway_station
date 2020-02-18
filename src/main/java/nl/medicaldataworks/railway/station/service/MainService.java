@@ -6,9 +6,9 @@ import javax.annotation.PostConstruct;
 
 @Service
 public class MainService {
-    private TaskService taskService;
+    private ProductionTaskService taskService;
 
-    public MainService(TaskService taskService) {
+    public MainService(ProductionTaskService taskService) {
         this.taskService = taskService;
     }
 

@@ -33,7 +33,7 @@ import static org.apache.http.HttpVersion.HTTP;
         value="central.simulation",
         havingValue = "false",
         matchIfMissing = true)
-public class ProductionTaskService implements TaskService {
+public class ProductionTaskService {
     public static final String TASK_API_PATH =  "/api/tasks";
     public static final String API_STATIONS =  "/api/stations";
     public static final String STATION_NAME_PARAM =  "station-name";
@@ -60,7 +60,6 @@ public class ProductionTaskService implements TaskService {
         this.trainRunnerService = trainRunnerService;
     }
 
-    @Override
     public void startService() throws InterruptedException {
         if(!isClientConfigurationValid()){
             log.info("Shutting down because the station name could not be validated.");
@@ -118,16 +117,13 @@ public class ProductionTaskService implements TaskService {
         return builder;
     }
 
-    @Override
     public void pollForNewTasks() throws InterruptedException {
         while (true){
             try {
                 log.info("Polling for tasks");
                 TaskDto[] task = getNextTaskFromServer();
                 if (task.length != 0) {
-                    TrainDto trainDto = getTrain(task[0].getTrainId());
-                    List<TaskDto> completedTasks = Arrays.asList(retrieveCompletedTasks(trainDto));
-                    performTask(task[0], trainDto, completedTasks);
+                    performTask(task[0]);
                 }
             } catch (URISyntaxException e) {
                 log.error("Error while connecting to central ", e);
@@ -141,7 +137,6 @@ public class ProductionTaskService implements TaskService {
     private TaskDto[] retrieveCompletedTasks(TrainDto trainDto) throws URISyntaxException {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format(API_TRAIN_TASKS, trainDto.getId()));
-        builder.addParameter("station-name", stationName);
         builder.addParameter("calculation-status", CalculationStatus.COMPLETED.name());
         builder.addParameter("iteration", trainDto.getCurrentIteration().toString());
         builder.addParameter("access_token", getAccessToken());
@@ -149,7 +144,6 @@ public class ProductionTaskService implements TaskService {
         return restTemplate.getForObject(builder.build().toString(), TaskDto[].class);
     }
 
-    @Override
     public TaskDto[] getNextTaskFromServer() throws URISyntaxException {
         URIBuilder builder = createUriBuilder();
         builder.setPath(TASK_API_PATH);
@@ -172,9 +166,9 @@ public class ProductionTaskService implements TaskService {
         return restTemplate.getForObject(builder.build().toString(), TrainDto.class);
     }
 
-    @Override
-    public void performTask(TaskDto taskDto, TrainDto trainDto, List<TaskDto> completedTaskDtos) throws URISyntaxException {
-        log.info("Running task: {} for train: {}.", taskDto.getId(), trainDto.getId());
+    public void performTask(TaskDto taskDto) throws URISyntaxException {
+        log.info("Running task: {}.", taskDto.getId());
+        TrainDto trainDto = getTrain(taskDto.getTrainId());
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
         String containerId;
@@ -182,7 +176,10 @@ public class ProductionTaskService implements TaskService {
             containerId = trainRunnerService.startContainer(trainDto.getDockerImageUrl());
             try {
                 trainRunnerService.addInputToTrain(containerId, taskDto.getInput());
-                trainRunnerService.addCompletedTasksToTrain(containerId, completedTaskDtos);
+                if(taskDto.isMaster()){
+                    List<TaskDto> completedTasks = Arrays.asList(retrieveCompletedTasks(trainDto));
+                    trainRunnerService.addCompletedTasksToTrain(containerId, completedTasks);
+                }
                 trainRunnerService.executeCommand(containerId, taskDto.isMaster());
                 processTrainResults(trainDto, taskDto, containerId);
             }
@@ -228,7 +225,6 @@ public class ProductionTaskService implements TaskService {
         restTemplate.put(builder.build().toString(), trainDto);
     }
 
-    @Override
     public void updateTask(TaskDto taskDto) throws URISyntaxException {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains/%s/tasks", taskDto.getTrainId()));
@@ -237,7 +233,6 @@ public class ProductionTaskService implements TaskService {
         restTemplate.put(builder.build().toString(), taskDto);
     }
 
-    @Override
     public void createNewTasks(List<TaskDto> taskDtos, Long trainId) throws URISyntaxException {
         for (TaskDto taskDto: taskDtos ) {
             URIBuilder builder = createUriBuilder();
