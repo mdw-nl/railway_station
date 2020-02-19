@@ -10,4 +10,5 @@ public class TrainDto {
     private String dockerImageUrl;
     private CalculationStatus calculationStatus;
     private Long currentIteration;
+    private Long clientTaskCount;
 }
