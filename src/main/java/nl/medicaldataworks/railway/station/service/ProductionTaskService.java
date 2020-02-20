@@ -170,7 +170,8 @@ public class ProductionTaskService {
         log.info("Running task: {}.", taskDto.getId());
         TrainDto trainDto = getTrain(taskDto.getTrainId());
         if(trainDto.getCalculationStatus().equals(CalculationStatus.REQUESTED)){
-            updateTrain(trainDto, trainDto.getClientTaskCount(), CalculationStatus.PROCESSING);
+            trainDto.setCalculationStatus(CalculationStatus.PROCESSING);
+            updateTrain(trainDto);
         }
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
@@ -206,9 +207,12 @@ public class ProductionTaskService {
         updateTask(taskDto);
         if(taskDto.isMaster()) {
             if(newTaskDtos.isEmpty()){
-                updateTrain(trainDto, 0l, CalculationStatus.COMPLETED);
+                trainDto.setCalculationStatus(CalculationStatus.COMPLETED);
+                updateTrain(trainDto);
             } else {
-                updateTrain(trainDto, Integer.toUnsignedLong(newTaskDtos.size()), CalculationStatus.COMPLETED);
+                trainDto.setClientTaskCount(Integer.toUnsignedLong(newTaskDtos.size()));
+                trainDto.setCurrentIteration(trainDto.getCurrentIteration() + 1);
+                updateTrain(trainDto);
             }
         }
     }
@@ -218,14 +222,13 @@ public class ProductionTaskService {
         taskDto.setError("UUID: ".concat(containerId).concat("\n message: ").concat(e.getMessage()));
         updateTask(taskDto);
         if(taskDto.isMaster()){
-            updateTrain(trainDto, 0l, CalculationStatus.ERRORED);
+            trainDto.setCalculationStatus(CalculationStatus.ERRORED);
+            updateTrain(trainDto);
         }
         log.error("Could not execute container. UUID: {}", containerId, e);
     }
 
-    private void updateTrain(TrainDto trainDto, Long clientTaskCount, CalculationStatus calculationStatus) throws URISyntaxException {
-        trainDto.setCalculationStatus(calculationStatus);
-        trainDto.setClientTaskCount(clientTaskCount);
+    private void updateTrain(TrainDto trainDto) throws URISyntaxException {
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains", trainDto));
         builder.addParameter("access_token", getAccessToken());
