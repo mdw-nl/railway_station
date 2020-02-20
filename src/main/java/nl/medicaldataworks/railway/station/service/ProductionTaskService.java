@@ -169,6 +169,9 @@ public class ProductionTaskService {
     public void performTask(TaskDto taskDto) throws URISyntaxException {
         log.info("Running task: {}.", taskDto.getId());
         TrainDto trainDto = getTrain(taskDto.getTrainId());
+        if(trainDto.getCalculationStatus().equals(CalculationStatus.REQUESTED)){
+            updateTrain(trainDto, trainDto.getClientTaskCount(), CalculationStatus.PROCESSING);
+        }
         taskDto.setCalculationStatus(CalculationStatus.PROCESSING);
         updateTask(taskDto);
         String containerId;
@@ -184,12 +187,12 @@ public class ProductionTaskService {
                 processTrainResults(trainDto, taskDto, containerId);
             }
             catch (Exception e) {
-                handleTrainExceptoion(containerId, trainDto, taskDto, e);
+                handleTrainException(containerId, trainDto, taskDto, e);
             } finally {
                 trainRunnerService.stopContainer(containerId);
             }
         } catch (Exception e) {
-            handleTrainExceptoion(UUID.randomUUID().toString(), trainDto, taskDto, e);
+            handleTrainException(UUID.randomUUID().toString(), trainDto, taskDto, e);
         }
     }
 
@@ -201,23 +204,28 @@ public class ProductionTaskService {
         taskDto.setResult(trainRunnerService.readOutputFromTrain(containerId));
         taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
         updateTask(taskDto);
-        if(taskDto.isMaster() && newTaskDtos.isEmpty()) {
-            updateTrainStatus(trainDto, CalculationStatus.COMPLETED);
+        if(taskDto.isMaster()) {
+            if(newTaskDtos.isEmpty()){
+                updateTrain(trainDto, 0l, CalculationStatus.COMPLETED);
+            } else {
+                updateTrain(trainDto, Integer.toUnsignedLong(newTaskDtos.size()), CalculationStatus.COMPLETED);
+            }
         }
     }
 
-    private void handleTrainExceptoion(String containerId, TrainDto trainDto, TaskDto taskDto, Exception e) throws URISyntaxException {
+    private void handleTrainException(String containerId, TrainDto trainDto, TaskDto taskDto, Exception e) throws URISyntaxException {
         taskDto.setCalculationStatus(CalculationStatus.ERRORED);
         taskDto.setError("UUID: ".concat(containerId).concat("\n message: ").concat(e.getMessage()));
         updateTask(taskDto);
         if(taskDto.isMaster()){
-            updateTrainStatus(trainDto, CalculationStatus.ERRORED);
+            updateTrain(trainDto, 0l, CalculationStatus.ERRORED);
         }
         log.error("Could not execute container. UUID: {}", containerId, e);
     }
 
-    private void updateTrainStatus(TrainDto trainDto, CalculationStatus calculationStatus) throws URISyntaxException {
+    private void updateTrain(TrainDto trainDto, Long clientTaskCount, CalculationStatus calculationStatus) throws URISyntaxException {
         trainDto.setCalculationStatus(calculationStatus);
+        trainDto.setClientTaskCount(clientTaskCount);
         URIBuilder builder = createUriBuilder();
         builder.setPath(String.format("/api/trains", trainDto));
         builder.addParameter("access_token", getAccessToken());
