@@ -226,10 +226,8 @@ public class ProductionTaskService {
         taskDto.setCalculationStatus(CalculationStatus.ERRORED);
         taskDto.setError("UUID: ".concat(containerId).concat("\n message: ").concat(e.getMessage()));
         updateTask(taskDto);
-        if(taskDto.isMaster()){
-            trainDto.setCalculationStatus(CalculationStatus.ERRORED);
-            updateTrain(trainDto);
-        }
+        trainDto.setCalculationStatus(CalculationStatus.ERRORED);
+        updateTrain(trainDto);
         log.error("Could not execute container. UUID: {}", containerId, e);
     }
 
