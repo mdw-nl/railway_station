@@ -202,9 +202,14 @@ public class ProductionTaskService {
         trainRunnerService.parseErrorLogsFromTrain(containerId);
         List<TaskDto> newTaskDtos = trainRunnerService.parseNewTasksFromTrain(containerId);
         createNewTasks(newTaskDtos, trainDto.getId());
+        //Train is updated first to prevent timing errors when creating new master tasks in Central
+        updateTrainStatus(trainDto, taskDto, newTaskDtos);
         taskDto.setResult(trainRunnerService.readOutputFromTrain(containerId));
         taskDto.setCalculationStatus(CalculationStatus.COMPLETED);
         updateTask(taskDto);
+    }
+
+    private void updateTrainStatus(TrainDto trainDto, TaskDto taskDto, List<TaskDto> newTaskDtos) throws URISyntaxException {
         if(taskDto.isMaster()) {
             if(newTaskDtos.isEmpty()){
                 trainDto.setCalculationStatus(CalculationStatus.COMPLETED);
